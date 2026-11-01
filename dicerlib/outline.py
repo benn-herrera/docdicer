@@ -38,7 +38,7 @@ def split_number(text: str) -> tuple[str, str]:
     m = _NUMBER.match(text)
     if not m:
         return "", text
-    return m.group()[:-1].removesuffix("."), text[m.end():]
+    return m.group()[:-1].removesuffix("."), text[m.end() :]
 
 
 def plan_sections(lines: list[str], *, err: TextIO) -> tuple[list[Section], bool]:
@@ -61,7 +61,7 @@ def plan_sections(lines: list[str], *, err: TextIO) -> tuple[list[Section], bool
                 print(f"extra level-1 heading at line {no} kept as text", file=err)
             seen_title = True
         elif level <= _DEEPEST_SPLIT_LEVEL:
-            headings.append((level, no, line[m.end():].rstrip(" ")))
+            headings.append((level, no, line[m.end() :].rstrip(" ")))
 
     parents = []
     open_headings: list[int] = []

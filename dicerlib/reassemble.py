@@ -26,7 +26,7 @@ def check_reassembly(sections: list[Section], lines: list[str], tree: Tree, *, o
             if cut == 0:
                 print(f"reassemble: no Contents block in {path}", file=err)
                 return False
-            leaf = leaf[:cut - 1]
+            leaf = leaf[: cut - 1]
         leaf_dir = parent_dir(s.path)
         fence = FenceTracker()
         for line in leaf:
@@ -37,7 +37,10 @@ def check_reassembly(sections: list[Section], lines: list[str], tree: Tree, *, o
                 want = lines[k] if fenced[k] else linker.rebase_only(lines[k], leaf_dir, next_line)
             k += 1
             if got != want:
-                print(f"reassemble: first difference at monolith line {k} ({path})\n  want: {want}\n  got:  {got}", file=err)
+                print(
+                    f"reassemble: first difference at monolith line {k} ({path})\n  want: {want}\n  got:  {got}",
+                    file=err,
+                )
                 return False
     if k != len(lines):
         print(f"reassemble: leaves hold {k} lines, monolith {len(lines)}", file=err)

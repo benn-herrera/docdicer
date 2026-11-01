@@ -13,10 +13,10 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from typing import Optional
 from pathlib import Path
+from typing import Optional
 
-from dicerlib.refactor import check_hunks
+from .dicerlib.refactor import check_hunks
 
 HERE = Path(__file__).resolve().parent
 TESTDATA = HERE / "testdata"
@@ -54,7 +54,9 @@ class GoldenCases(unittest.TestCase):
                 run = Path(scratch) / "run"
                 shutil.copytree(case / "input", run)
                 args = (case / "args").read_text(encoding="utf-8").splitlines()
-                proc = subprocess.run([sys.executable, str(CLI), *args], cwd=run, env=_case_env(case), capture_output=True)
+                proc = subprocess.run(
+                    [sys.executable, str(CLI), *args], cwd=run, env=_case_env(case), capture_output=True
+                )
                 expected = case / "expected"
                 self.assertEqual(proc.stdout, (expected / "stdout").read_bytes())
                 self.assertEqual(proc.stderr, (expected / "stderr").read_bytes())
