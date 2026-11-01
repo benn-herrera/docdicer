@@ -11,7 +11,4 @@ dependencies = []
 
 [tool.setuptools.package-data]
 "*" = ["!justfile"]
-"docdicer" = ["!testdata/*"]
-
-[tool.setuptools.exclude-package-data]
-"docdicer" = ["test_dicer.py"]
+"docdicer" = ["!test/*"]

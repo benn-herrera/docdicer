@@ -15,14 +15,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from .dicerlib.refactor import check_hunks
+from docdicer.dicerlib.refactor import check_hunks
 
+MODULE = "docdicer"
 HERE = Path(__file__).resolve().parent
-TESTDATA = HERE / "testdata"
-PYTHONPATH = HERE.parent
-MODULE = HERE.name
-SCRATCH_DIR = TESTDATA / "temp"
-
+SCRATCH_DIR = HERE / "temp"
+TESTDATA = HERE / "data"
 
 def _files(root: Path) -> dict[str, bytes]:
     return {p.relative_to(root).as_posix(): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
@@ -30,7 +28,6 @@ def _files(root: Path) -> dict[str, bytes]:
 
 def _case_env(case: Path) -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if k != "DICER_KEEP"}
-    env["PYTHONPATH"] = str(PYTHONPATH)
     env_file = case / "env"
     if env_file.exists():
         for line in env_file.read_text(encoding="utf-8").splitlines():
@@ -46,7 +43,7 @@ def _scratch_root() -> Path:
 
 class GoldenCases(unittest.TestCase):
     def test_cases(self) -> None:
-        cases = sorted(p for p in TESTDATA.iterdir() if p.is_dir() and p != SCRATCH_DIR)
+        cases = sorted(p for p in TESTDATA.iterdir() if p.is_dir())
         self.assertTrue(cases, "no cases under testdata/")
         for case in cases:
             with self.subTest(case=case.name), tempfile.TemporaryDirectory(dir=_scratch_root()) as scratch:
