@@ -13,6 +13,7 @@ from .dicerlib.refactor import list_runins, refactor
 from .dicerlib.textfile import read_lines
 from .dicerlib.treecheck import check_trees
 
+version = "0.5.0"
 
 def _keep_list() -> list[str]:
     """Titles never converted: the comma list in DICER_KEEP, default "Open"; empty keeps none."""
@@ -23,6 +24,8 @@ def _keep_list() -> list[str]:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="dicer.py", description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True, metavar="command")
+
+    _ = commands.add_parser("version", help="print version and exit")
 
     p = commands.add_parser("dice-doc", help="dice one document, then check it reassembles and its links resolve")
     p.add_argument("monolith")
@@ -55,13 +58,15 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("roots", nargs="+", metavar="root", help="a diced tree's directory, holding its entry-point.md")
     return parser
 
-
 def main(argv: Optional[list[str]] = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         stream.reconfigure(encoding="utf-8", errors="surrogateescape")
     parser = _parser()
     args = parser.parse_args(argv)
     out, err = sys.stdout, sys.stderr
+    if args.command == "version":
+        print(version)
+        sys.exit(0)
     if args.command == "dice-doc":
         return dice_doc(args.monolith, args.out, args.map, stdout=out, stderr=err)
     if args.command == "dice-docs":

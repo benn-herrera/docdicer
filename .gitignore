@@ -2,3 +2,7 @@ __pycache__/
 .DS_Store
 testdata/temp/
 .venv/
+.claude/
+.claude-temp/
+.opencode/
+.opencode-temp/

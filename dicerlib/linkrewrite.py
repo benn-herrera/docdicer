@@ -108,7 +108,7 @@ def _anchor_homes(outline: Outline, lines: list[str]) -> dict[str, tuple[str, st
     """For each heading anchor of the monolith, the file of the diced tree that holds the heading
     and its anchor there: "" where the heading opens that file (a link to the file needs none),
     else its anchor within the file, whose repeat suffixes count that file's headings alone."""
-    from dicerlib.linkcheck import heading_anchor_list  # linkcheck imports this module
+    from .linkcheck import heading_anchor_list  # linkcheck imports this module
 
     owner = {}  # monolith line -> section holding it
     for s in outline.sections:
