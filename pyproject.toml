@@ -1,0 +1,10 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "docdicer"
+version = "0.5.0"
+description = "A simple, stdlib-only monolithic -> hierarchy markdown tool for agent context efficiency"
+requires-python = ">=3.9"
+dependencies = []
