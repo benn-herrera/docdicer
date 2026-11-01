@@ -9,6 +9,8 @@ description = "A simple, stdlib-only monolithic -> hierarchy markdown tool for a
 requires-python = ">=3.9"
 dependencies = []
 
+[tool.setuptools.packages.find]
+exclude = ["docdicer.test", "docdicer.test.*"]
+
 [tool.setuptools.package-data]
 "*" = ["!justfile"]
-"docdicer" = ["!test/*"]
