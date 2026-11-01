@@ -10,5 +10,8 @@ requires-python = ">=3.9"
 dependencies = []
 
 [tool.setuptools.package-data]
-"*" = ["!test_dicer.py", "!justfile"]
+"*" = ["!justfile"]
 "docdicer" = ["!testdata/*"]
+
+[tool.setuptools.exclude-package-data]
+"docdicer" = ["test_dicer.py"]
