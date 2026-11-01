@@ -15,6 +15,7 @@ from .dicerlib.treecheck import check_trees
 
 version = "0.5.0"
 
+
 def _keep_list() -> list[str]:
     """Titles never converted: the comma list in DICER_KEEP, default "Open"; empty keeps none."""
     keep = os.environ.get("DICER_KEEP", "Open")
@@ -57,6 +58,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     p.add_argument("roots", nargs="+", metavar="root", help="a diced tree's directory, holding its entry-point.md")
     return parser
+
 
 def main(argv: Optional[list[str]] = None) -> int:
     for stream in (sys.stdout, sys.stderr):

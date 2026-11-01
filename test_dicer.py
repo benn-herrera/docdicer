@@ -14,7 +14,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Optional
 
 from .dicerlib.refactor import check_hunks
 
@@ -23,6 +22,7 @@ TESTDATA = HERE / "testdata"
 PYTHONPATH = HERE.parent
 MODULE = HERE.name
 SCRATCH_DIR = TESTDATA / "temp"
+
 
 def _files(root: Path) -> dict[str, bytes]:
     return {p.relative_to(root).as_posix(): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
@@ -43,6 +43,7 @@ def _scratch_root() -> Path:
     os.makedirs(SCRATCH_DIR, exist_ok=True)
     return SCRATCH_DIR
 
+
 class GoldenCases(unittest.TestCase):
     def test_cases(self) -> None:
         cases = sorted(p for p in TESTDATA.iterdir() if p.is_dir() and p != SCRATCH_DIR)
@@ -53,7 +54,7 @@ class GoldenCases(unittest.TestCase):
                 shutil.copytree(case / "input", run)
                 args = (case / "args").read_text(encoding="utf-8").splitlines()
                 proc = subprocess.run(
-                  [sys.executable, f"-m{MODULE}", *args], cwd=run, env=_case_env(case), capture_output=True
+                    [sys.executable, f"-m{MODULE}", *args], cwd=run, env=_case_env(case), capture_output=True
                 )
                 expected = case / "expected"
                 self.assertEqual(proc.stdout, (expected / "stdout").read_bytes())
