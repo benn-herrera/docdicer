@@ -20,8 +20,9 @@ from .dicerlib.refactor import check_hunks
 
 HERE = Path(__file__).resolve().parent
 TESTDATA = HERE / "testdata"
-CLI = HERE / "dicer.py"
-
+PYTHONPATH = HERE.parent
+MODULE = HERE.name
+SCRATCH_DIR = TESTDATA / "temp"
 
 def _files(root: Path) -> dict[str, bytes]:
     return {p.relative_to(root).as_posix(): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
@@ -29,6 +30,7 @@ def _files(root: Path) -> dict[str, bytes]:
 
 def _case_env(case: Path) -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if k != "DICER_KEEP"}
+    env["PYTHONPATH"] = str(PYTHONPATH)
     env_file = case / "env"
     if env_file.exists():
         for line in env_file.read_text(encoding="utf-8").splitlines():
@@ -37,17 +39,13 @@ def _case_env(case: Path) -> dict[str, str]:
     return env
 
 
-def _scratch_root() -> Optional[str]:
-    """Where case scratch directories go: $DICER_SCRATCH, created if absent, else the system temp."""
-    root = os.environ.get("DICER_SCRATCH")
-    if root:
-        os.makedirs(root, exist_ok=True)
-    return root or None
-
+def _scratch_root() -> Path:
+    os.makedirs(SCRATCH_DIR, exist_ok=True)
+    return SCRATCH_DIR
 
 class GoldenCases(unittest.TestCase):
     def test_cases(self) -> None:
-        cases = sorted(p for p in TESTDATA.iterdir() if p.is_dir())
+        cases = sorted(p for p in TESTDATA.iterdir() if p.is_dir() and p != SCRATCH_DIR)
         self.assertTrue(cases, "no cases under testdata/")
         for case in cases:
             with self.subTest(case=case.name), tempfile.TemporaryDirectory(dir=_scratch_root()) as scratch:
@@ -55,7 +53,7 @@ class GoldenCases(unittest.TestCase):
                 shutil.copytree(case / "input", run)
                 args = (case / "args").read_text(encoding="utf-8").splitlines()
                 proc = subprocess.run(
-                    [sys.executable, str(CLI), *args], cwd=run, env=_case_env(case), capture_output=True
+                  [sys.executable, f"-m{MODULE}", *args], cwd=run, env=_case_env(case), capture_output=True
                 )
                 expected = case / "expected"
                 self.assertEqual(proc.stdout, (expected / "stdout").read_bytes())

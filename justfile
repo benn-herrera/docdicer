@@ -3,12 +3,10 @@ VENV := PROJECT_ROOT / ".venv"
 PYBIN := if os() == "windows" { "Scripts" } else { "bin" }
 EXE := if os() == "windows" { ".exe" } else { "" }
 VENV_PYTHON := VENV / PYBIN / "python" + EXE
-DICER_SCRATCH := PROJECT_ROOT / "testdata" / "temp"
 
 [doc("run the docdicer's golden tests")]
 test:
-  @mkdir -p "{{DICER_SCRATCH}}"
-  DICER_SCRATCH="{{DICER_SCRATCH}}" PYTHONPATH="$(dirname "{{PROJECT_ROOT}}}")" python3 -m docdicer.test_dicer
+  PYTHONPATH="$(dirname "{{PROJECT_ROOT}}")" python3 -m docdicer.test_dicer
 
 FLAKE8_IGNORE := "E122,E201,E202,E203,E225,E226,E228,E261,E265,E302,E303,E501,E704,E731,W291,W293,W391,W503"
 [doc("[dev] black-format, isort, flake8 the generator (adjagent), the tests and devtools, or the given path(s) in place of all of them")]
