@@ -72,7 +72,7 @@ def heading_anchor_list(lines: list[str]) -> list[tuple[int, Anchor]]:
         m = _ATX_HEADING.match(line)
         if fence.inside(line) or not m:
             continue
-        base = github_anchor(_CLOSING_HASHES.sub("", line[m.end():].strip(" \t")))
+        base = github_anchor(_CLOSING_HASHES.sub("", line[m.end() :].strip(" \t")))
         n = repeats.get(base, 0)
         found.append((no, Anchor(base, f"{base}-{n}" if n else base)))
         repeats[base] = n + 1

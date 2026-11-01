@@ -90,7 +90,7 @@ def _purpose(monolith: str) -> str:
             break
     text = _LINK.sub(r"\1", " ".join(paragraph))
     end = text.find(". ")
-    return text[:end + 1] if end >= 0 else text
+    return text[: end + 1] if end >= 0 else text
 
 
 def _link_map_rows(volumes: list[_Volume], entry: Optional[_Entry], *, err: TextIO) -> list[str]:

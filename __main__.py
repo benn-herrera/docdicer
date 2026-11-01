@@ -8,10 +8,10 @@ from typing import Optional
 
 from .dicerlib.dicedoc import dice_doc, verify
 from .dicerlib.linkcheck import check_markdown_links
-from .dicerlib.treecheck import check_trees
 from .dicerlib.manifest import dice_docs
 from .dicerlib.refactor import list_runins, refactor
 from .dicerlib.textfile import read_lines
+from .dicerlib.treecheck import check_trees
 
 
 def _keep_list() -> list[str]:
@@ -49,7 +49,9 @@ def _parser() -> argparse.ArgumentParser:
     p = commands.add_parser("check-links", help="check the relative links and anchors of markdown files")
     p.add_argument("roots", nargs="+", metavar="root", help="a directory, walked for every .md, or one file")
 
-    p = commands.add_parser("check-tree", help="check every document of a diced tree is linked from its parent and reachable")
+    p = commands.add_parser(
+        "check-tree", help="check every document of a diced tree is linked from its parent and reachable"
+    )
     p.add_argument("roots", nargs="+", metavar="root", help="a diced tree's directory, holding its entry-point.md")
     return parser
 

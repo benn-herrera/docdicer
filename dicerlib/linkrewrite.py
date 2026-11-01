@@ -90,7 +90,7 @@ def _scan(s: str, on_link: OnLink, on_ref: Optional[OnRef] = None) -> str:
             bracket = s.find("]", p)
             paren = s.find(")", bracket + 2) if bracket >= 0 and s.startswith("](", bracket) else -1
             if paren >= 0:
-                out.append(on_link(s[p:paren + 1], s[p + 1:bracket], s[bracket + 2:paren], s[paren + 1:]))
+                out.append(on_link(s[p : paren + 1], s[p + 1 : bracket], s[bracket + 2 : paren], s[paren + 1 :]))
                 p = paren + 1
                 continue
         if on_ref is not None:
@@ -198,7 +198,7 @@ class Linker:
         number, name = text[1:], ""
         i = number.find(" `")
         if i >= 0:
-            number, name = number[:i], number[i + 2:].removesuffix("`")
+            number, name = number[:i], number[i + 2 :].removesuffix("`")
         if number not in self.outline.by_number:
             return False
         if name:

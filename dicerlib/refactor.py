@@ -49,7 +49,7 @@ def _classify(line: str, *, prev_blank: bool) -> tuple[str, str, str]:
     m = _BOLD_ITEM.match(line)
     if m:
         if m.group(1)[-1] in ".:":
-            return "ITEM", _strip_mark(m.group(1)), line[m.end():]
+            return "ITEM", _strip_mark(m.group(1)), line[m.end() :]
         return "LIST", _excerpt(line), ""
     if line[0] in " \t" or _OTHER_LIST_ITEM.match(line):
         return "LIST", _excerpt(line), ""
@@ -57,13 +57,15 @@ def _classify(line: str, *, prev_blank: bool) -> tuple[str, str, str]:
         return "MID", _excerpt(line), ""
     m = _BOLD_RUNIN.match(line)
     if m:
-        rest = line[m.end():]
+        rest = line[m.end() :]
         if rest == "" or m.group(1)[-1] in ".:":
             return "RUNIN", _strip_mark(m.group(1)), rest
     return "LABEL", _excerpt(line), ""
 
 
-def _walk(lines: list[str], *, converting: bool, items: bool, keep: Iterable[str], name: str) -> tuple[list[str], list[str]]:
+def _walk(
+    lines: list[str], *, converting: bool, items: bool, keep: Iterable[str], name: str
+) -> tuple[list[str], list[str]]:
     """(output lines, notes): converting, the notes are the skipped long titles; listing, one row
     per bold-led line."""
     keep = frozenset(keep)
@@ -86,7 +88,7 @@ def _walk(lines: list[str], *, converting: bool, items: bool, keep: Iterable[str
             in_item = False
         m = _HEADING.match(line)
         if not fenced and m:
-            level, heading = m.end() - 1, line[m.end():]
+            level, heading = m.end() - 1, line[m.end() :]
             prev_blank = False
             out.append(line)
             continue
@@ -148,7 +150,7 @@ def _expected(old: list[str]) -> list[tuple[bool, str]]:
             i += 1
             continue
         m = item or runin
-        rest = old[i][m.end():].lstrip(" ")
+        rest = old[i][m.end() :].lstrip(" ")
         expected.append((True, _strip_mark(m.group(1))))
         if item:
             expected.append((False, ""))
@@ -172,7 +174,7 @@ def _is_conversion(hunk: _Hunk) -> bool:
     for (is_heading, text), got in zip(expected, hunk.new):
         if is_heading:
             m = _HEADING.match(got)
-            if not m or got[m.end():] != text:
+            if not m or got[m.end() :] != text:
                 return False
         elif got != text:
             return False
@@ -194,14 +196,16 @@ def check_hunks(old_text: str, new_text: str) -> tuple[int, list[str]]:
             continue
         if hunks:
             last = hunks[-1]
-            gap = old[last.end:i1]
+            gap = old[last.end : i1]
             if len(gap) <= _MERGE_GAP_LINES and all(map(is_blank, gap)):
                 last.old += gap + old[i1:i2]
                 last.new += gap + new[j1:j2]
                 last.end = i2
                 continue
         hunks.append(_Hunk(start=i1 + 1, end=i2, old=old[i1:i2], new=new[j1:j2]))
-    bad = [f"BAD merged hunk at old line {h.start}: {h.old[0] if h.old else ''}" for h in hunks if not _is_conversion(h)]
+    bad = [
+        f"BAD merged hunk at old line {h.start}: {h.old[0] if h.old else ''}" for h in hunks if not _is_conversion(h)
+    ]
     return len(hunks), bad
 
 
