@@ -13,7 +13,7 @@ FLAKE8_IGNORE := "E122,E201,E202,E203,E225,E226,E228,E261,E265,E302,E303,E501,E7
 format-python: _venv
   @"{{VENV_PYTHON}}" -m black --line-length=120 .
   @"{{VENV_PYTHON}}" -m isort --profile black --line-length 120 .
-  @echo TODO: "{{VENV_PYTHON}}" -m flake8 --ignore="{{FLAKE8_IGNORE}}" .
+  @"{{VENV_PYTHON}}" -m flake8 --ignore="{{FLAKE8_IGNORE}}" --extend-exclude=.venv,.claude-temp,testdata .
 
 # Venv layout differs by OS: POSIX puts executables in .venv/bin, Windows in
 # .venv/Scripts with .exe suffixes. Resolved here via just's os() builtin.
