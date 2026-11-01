@@ -8,3 +8,7 @@ version = "0.5.0"
 description = "A simple, stdlib-only monolithic -> hierarchy markdown tool for agent context efficiency"
 requires-python = ">=3.9"
 dependencies = []
+
+[tool.setuptools.package-data]
+"*" = ["!test_dicer.py", "!justfile"]
+"docdicer" = ["!testdata/*"]
