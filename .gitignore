@@ -1,9 +1,10 @@
 __pycache__/
 .pytest_cache/
 .DS_Store
-testdata/temp/
 .venv/
 .claude/
 .claude-temp/
 .opencode/
 .opencode-temp/
+
+docdicer/test/temp/
