@@ -1,6 +1,6 @@
-"""Golden tests for dicer.py.
+"""Golden tests for docdicer.
 
-Each case under testdata/ runs the CLI in a scratch copy of its input/ with the arguments in
+Each case under data/ runs the CLI in a scratch copy of its input/ with the arguments in
 `args` (one per line) and the environment in `env` (KEY=VALUE lines; DICER_KEEP is otherwise
 unset), and must reproduce expected/: every file of expected/tree/, and stdout, stderr and the
 exit status byte for byte. The expected outputs were produced by the shell/awk implementation
@@ -45,7 +45,7 @@ def _scratch_root() -> Path:
 class GoldenCases(unittest.TestCase):
     def test_cases(self) -> None:
         cases = sorted(p for p in TESTDATA.iterdir() if p.is_dir())
-        self.assertTrue(cases, "no cases under testdata/")
+        self.assertTrue(cases, "no cases under data/")
         for case in cases:
             with self.subTest(case=case.name), tempfile.TemporaryDirectory(dir=_scratch_root()) as scratch:
                 run = Path(scratch) / "run"

@@ -106,12 +106,13 @@ the base name of `file`.
   section links reverted, reproduces the monolith's lines exactly (outside links are compared in
   their rewritten form). Proves nothing was lost, moved or edited.
 - Links: every relative link in the output resolves to an existing file. Proves the tree and the
-  cross-document map are consistent; it does not check `#anchor` fragments.
+  cross-document map are consistent; it does not check `#anchor` fragments, which `check-links`
+  does.
 
 ## Worked example
 
 kbase's `PROJECT_DOCS/` was first produced from its root documents with this manifest (tab
-separated; `tools/dicer/kbase-docs.tsv` in the commit that introduced it), the sources copied from
+separated; kbase's `tools/dicer/kbase-docs.tsv`, in the commit that introduced it), the sources copied from
 `HEAD` into a scratch directory:
 
 | file | outdir | flags | label |
