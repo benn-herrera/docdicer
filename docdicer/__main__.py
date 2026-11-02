@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
-"""dicer: split markdown documents by heading into trees of small linked files (see README.md)."""
+"""docdicer: split markdown documents by heading into trees of small linked files (see README.md).
+
+Exit status: 0 on success, 1 when a check or step fails, 2 on bad arguments.
+"""
 
 import argparse
 import os
 import sys
 from typing import Optional
 
+from . import __version__
 from .dicerlib.dicedoc import dice_doc, verify
 from .dicerlib.linkcheck import check_markdown_links
 from .dicerlib.manifest import dice_docs
 from .dicerlib.refactor import list_runins, refactor
 from .dicerlib.textfile import read_lines
 from .dicerlib.treecheck import check_trees
-from .__init__ import __version__
+
 
 def _keep_list() -> list[str]:
     """Titles never converted: the comma list in DICER_KEEP, default "Open"; empty keeps none."""
@@ -21,32 +25,33 @@ def _keep_list() -> list[str]:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="dicer.py", description=__doc__)
+    parser = argparse.ArgumentParser(
+        prog="docdicer", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--version", action="version", version=__version__)
     commands = parser.add_subparsers(dest="command", required=True, metavar="command")
 
-    _ = commands.add_parser("version", help="print version and exit")
-
     p = commands.add_parser("dice-doc", help="dice one document, then check it reassembles and its links resolve")
-    p.add_argument("monolith")
+    p.add_argument("monolith", help="the markdown document to dice")
     p.add_argument("out", help="output directory, absent or empty")
     p.add_argument("map", nargs="?", default="", help="link map TSV")
 
     p = commands.add_parser("dice-docs", help="dice the documents a manifest TSV lists, then verify them all")
-    p.add_argument("manifest")
+    p.add_argument("manifest", help="manifest TSV naming the documents and their output directories")
     p.add_argument("src", help="directory the manifest's files are read from")
     p.add_argument("work", help="directory for intermediates")
 
     p = commands.add_parser("verify", help="re-run the checks on trees already built")
     p.add_argument("map", help='link map TSV, or "-" for none')
-    p.add_argument("pairs", nargs="+", metavar="monolith out")
+    p.add_argument("pairs", nargs="+", metavar="monolith out", help="each monolith followed by its output directory")
 
     p = commands.add_parser("refactor", help="turn bold run-in titles into headings")
-    p.add_argument("input", metavar="in")
-    p.add_argument("output", metavar="out")
+    p.add_argument("input", metavar="in", help="the markdown document to read")
+    p.add_argument("output", metavar="out", help="where the refactored document is written")
     p.add_argument("items", nargs="?", default="", help='"0" or absent: leave bold list items alone')
 
     p = commands.add_parser("list", help="classify every bold-led line of a document")
-    p.add_argument("doc")
+    p.add_argument("doc", help="the markdown document to classify")
 
     p = commands.add_parser("check-links", help="check the relative links and anchors of markdown files")
     p.add_argument("roots", nargs="+", metavar="root", help="a directory, walked for every .md, or one file")
@@ -64,9 +69,6 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
     out, err = sys.stdout, sys.stderr
-    if args.command == "version":
-        print(__version__)
-        sys.exit(0)
     if args.command == "dice-doc":
         return dice_doc(args.monolith, args.out, args.map, stdout=out, stderr=err)
     if args.command == "dice-docs":

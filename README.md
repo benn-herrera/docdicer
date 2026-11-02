@@ -7,7 +7,10 @@ directory the documents' relative links are written against.
 
 ## Tools
 
-One CLI, `python3 dicer.py <command> ...`:
+One CLI, `python3 -m docdicer <command> ...` with this repository's root (the directory holding
+the `docdicer` package) on `PYTHONPATH`. `python3 -m docdicer --version` prints the version; `-h`,
+on its own or after a command, prints help. Exit status is 0 on success, 1 when a check or step
+fails, 2 on bad arguments.
 
 - `dice-doc <monolith.md> <out-dir> [map.tsv]` dices one document and runs the checks below.
   `out-dir` must be absent or empty. Exit 1 when a step fails, 2 on bad arguments.
@@ -28,20 +31,21 @@ One CLI, `python3 dicer.py <command> ...`:
   `#fragment`) with a heading whose GitHub anchor equals it. The anchor is the heading text
   lowercased, with every character but letters, digits, spaces, `-` and `_` dropped and spaces
   made `-`; a repeat in one file takes `-1`, `-2`, … in order. It is not a leaf's file-name slug.
+  Headings inside fenced code have none. Links with a URL scheme and root-absolute `/` links are
+  skipped. Prints `file:line: target: missing file` or `missing anchor` to stderr per broken link,
+  then the count; exit 1 if any is broken, 2 on bad arguments or a missing root.
 - `check-tree <root>...` checks a diced tree's structure, which no link check sees: every
   document is linked from its parent, and every document is reachable by links from the root's
   `entry-point.md`. A directory's head is its `entry-point.md` where it has one (the root, a diced
   volume), else its `index.md`; a document's parent is its directory's head, and a head's parent
   is the head above it. A leaf that its index stopped listing fails even where another document,
-  such as the entry point's contents, still links it. Exit 1 on any problem.
-  Headings inside fenced code have none. Links with a URL scheme and root-absolute `/` links are
-  skipped. Prints `file:line: target: missing file` or `missing anchor` to stderr per broken link,
-  then the count; exit 1 if any is broken, 2 on bad arguments or a missing root.
+  such as the entry point's contents, still links it. Exit 1 on any problem, 2 on bad arguments
+  or a root that is not a directory.
 
 The passes behind them live in `dicerlib/`, one module each: `outline` (headings to files),
 `split` (writing the tree), `linkrewrite` (section links, rebasing, the map), `reassemble` and
 `linkcheck` (the checks, `check-links` included), `refactor` (run-ins and the hunk check), `dicedoc` and `manifest` (the
-drivers). `just test-dicer` runs the golden cases under `testdata/`.
+drivers). `just test` runs the golden cases under `docdicer/test/data/`.
 
 ## Heading convention
 
