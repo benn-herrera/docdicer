@@ -2,6 +2,9 @@ __pycache__/
 .pytest_cache/
 .DS_Store
 .venv/
+dist/
+build/
+*.egg-info/
 .claude/
 .claude-temp/
 .opencode/

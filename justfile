@@ -8,8 +8,12 @@ VENV_PYTHON := VENV / PYBIN / "python" + EXE
 test: _venv
   PYTHONPATH="{{PROJECT_ROOT}}" "{{VENV_PYTHON}}" "{{PROJECT_ROOT}}/docdicer/test/test_dicer.py"
 
+[doc("build the docdicer wheel into dist/")]
+build: _venv
+  "{{VENV_PYTHON}}" -m pip wheel --no-deps -w "{{PROJECT_ROOT}}/dist" "{{PROJECT_ROOT}}"
+
 FLAKE8_IGNORE := "E122,E201,E202,E203,E225,E226,E228,E261,E265,E302,E303,E501,E704,E731,W291,W293,W391,W503"
-[doc("[dev] black-format, isort, flake8 the generator (adjagent), the tests and devtools, or the given path(s) in place of all of them")]
+[doc("[dev] black-format, isort, flake8 the docdicer package and its tests")]
 format: _venv
   @"{{VENV_PYTHON}}" -m black --line-length=120 docdicer
   @"{{VENV_PYTHON}}" -m isort --profile black --line-length 120 docdicer
@@ -21,7 +25,7 @@ format: _venv
 # Lazy: if the venv's python already exists this is a no-op; a half-built
 # venv is repaired by deleting .venv and re-running.
 # The tool versions are pinned on the install line, so a venv rebuild cannot
-# silently change what `just format-python` and `just test` do; bumping one is
+# silently change what `just format` and `just test` do; bumping one is
 # an edit to that line, visible in the diff. `pip` stays unpinned: it installs,
 # it does not produce output a change depends on.
 [private]
