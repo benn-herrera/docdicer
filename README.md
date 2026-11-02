@@ -1,9 +1,14 @@
 # docdicer
 
-Splits a markdown document by heading into a tree of small linked files, and keeps documents that
-cite each other linked across their trees. Python 3.9 or later, standard library only; the tools
-take every input as an argument and name nothing specific to a repository. Run them from the
-directory the documents' relative links are written against.
+A tool for turning a single or set of heavy monolithic markdown documents into a context-friendly file hierarchy.
+Primary use case: turning large, complex model-facing project and plan documents into something that can
+be efficiently consumed based on need.
+
+- Complex SPEC.md, ARCHITECTURE.md, CONVENTIONS.md files
+- Large generated design docs and working plans
+
+Python 3.9 or later, standard library only; the tools take every input as an argument and name nothing specific
+to a repository. Run them from the directory the documents' relative links are written against.
 
 ## Developer
 
