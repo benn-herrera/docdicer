@@ -6,14 +6,14 @@ VENV_PYTHON := VENV / PYBIN / "python" + EXE
 
 [doc("run the docdicer's golden tests")]
 test: _venv
-  PYTHONPATH="$(dirname "{{justfile_dir()}}")" "{{VENV_PYTHON}}" "{{PROJECT_ROOT}}/test/test_dicer.py"
+  PYTHONPATH="{{PROJECT_ROOT}}" "{{VENV_PYTHON}}" "{{PROJECT_ROOT}}/docdicer/test/test_dicer.py"
 
 FLAKE8_IGNORE := "E122,E201,E202,E203,E225,E226,E228,E261,E265,E302,E303,E501,E704,E731,W291,W293,W391,W503"
 [doc("[dev] black-format, isort, flake8 the generator (adjagent), the tests and devtools, or the given path(s) in place of all of them")]
-format-python: _venv
-  @"{{VENV_PYTHON}}" -m black --line-length=120 .
-  @"{{VENV_PYTHON}}" -m isort --profile black --line-length 120 .
-  @"{{VENV_PYTHON}}" -m flake8 --ignore="{{FLAKE8_IGNORE}}" --extend-exclude=.venv,.claude-temp,testdata .
+format: _venv
+  @"{{VENV_PYTHON}}" -m black --line-length=120 docdicer
+  @"{{VENV_PYTHON}}" -m isort --profile black --line-length 120 docdicer
+  @"{{VENV_PYTHON}}" -m flake8 --ignore="{{FLAKE8_IGNORE}}" docdicer
 
 # Venv layout differs by OS: POSIX puts executables in .venv/bin, Windows in
 # .venv/Scripts with .exe suffixes. Resolved here via just's os() builtin.

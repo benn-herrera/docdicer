@@ -22,6 +22,7 @@ HERE = Path(__file__).resolve().parent
 SCRATCH_DIR = HERE / "temp"
 TESTDATA = HERE / "data"
 
+
 def _files(root: Path) -> dict[str, bytes]:
     return {p.relative_to(root).as_posix(): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
 
