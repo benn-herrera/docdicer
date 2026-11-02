@@ -1,4 +1,4 @@
-# dicer
+# docdicer
 
 Splits a markdown document by heading into a tree of small linked files, and keeps documents that
 cite each other linked across their trees. Python 3.9 or later, standard library only; the tools
@@ -13,7 +13,7 @@ on its own or after a command, prints help. Exit status is 0 on success, 1 when 
 fails, 2 on bad arguments.
 
 - `dice-doc <monolith.md> <out-dir> [map.tsv]` dices one document and runs the checks below.
-  `out-dir` must be absent or empty. Exit 1 when a step fails, 2 on bad arguments.
+  `out-dir` must be absent or empty.
 - `refactor <in.md> <out.md> [items]` turns bold run-in titles into headings (see Transforms);
   any `items` value other than empty or `0` converts bold list items too. Exit 1 on a bad hunk.
 - `dice-docs <manifest.tsv> <src-dir> <work-dir>` drives several documents: refactor where
@@ -44,8 +44,9 @@ fails, 2 on bad arguments.
 
 The passes behind them live in `dicerlib/`, one module each: `outline` (headings to files),
 `split` (writing the tree), `linkrewrite` (section links, rebasing, the map), `reassemble` and
-`linkcheck` (the checks, `check-links` included), `refactor` (run-ins and the hunk check), `dicedoc` and `manifest` (the
-drivers). `just test` runs the golden cases under `docdicer/test/data/`.
+`linkcheck` (the checks, `check-links` included), `refactor` (run-ins and the hunk check),
+`dicedoc` and `manifest` (the drivers). `just test` runs the golden cases under
+`docdicer/test/data/`; `just build` builds a wheel into `dist/`.
 
 ## Heading convention
 
@@ -112,8 +113,8 @@ the base name of `file`.
 ## Worked example
 
 kbase's `PROJECT_DOCS/` was first produced from its root documents with this manifest (tab
-separated; kbase's `tools/dicer/kbase-docs.tsv`, in the commit that introduced it), the sources copied from
-`HEAD` into a scratch directory:
+separated; kbase's `tools/dicer/kbase-docs.tsv`, in the commit that introduced it), the sources
+copied from `HEAD` into a scratch directory, run by kbase's own `dice-docs` justfile target:
 
 | file | outdir | flags | label |
 |---|---|---|---|
