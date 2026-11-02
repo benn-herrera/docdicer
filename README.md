@@ -8,7 +8,8 @@ directory the documents' relative links are written against.
 ## Tools
 
 One CLI, `python3 -m docdicer <command> ...` with this repository's root (the directory holding
-the `docdicer` package) on `PYTHONPATH`. `python3 -m docdicer --version` prints the version; `-h`,
+the `docdicer` package) on `PYTHONPATH`; installed with pip, the same CLI is the `docdicer`
+command. `python3 -m docdicer --version` prints the version; `-h`,
 on its own or after a command, prints help. Exit status is 0 on success, 1 when a check or step
 fails, 2 on bad arguments.
 
