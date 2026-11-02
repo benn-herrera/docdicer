@@ -5,6 +5,10 @@ cite each other linked across their trees. Python 3.9 or later, standard library
 take every input as an argument and name nothing specific to a repository. Run them from the
 directory the documents' relative links are written against.
 
+## Developer
+
+<https://keyoxide.org/wkd/benn@bennherrera.dev>
+
 ## Tools
 
 One CLI, `python3 -m docdicer <command> ...` with this repository's root (the directory holding
