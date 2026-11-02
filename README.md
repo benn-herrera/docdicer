@@ -7,6 +7,8 @@ be efficiently consumed based on need.
 - Complex SPEC.md, ARCHITECTURE.md, CONVENTIONS.md files
 - Large generated design docs and working plans
 
+<img src="readme-img.png" width="25%"/>
+
 Python 3.9 or later, standard library only; the tools take every input as an argument and name nothing specific
 to a repository. Run them from the directory the documents' relative links are written against.
 
