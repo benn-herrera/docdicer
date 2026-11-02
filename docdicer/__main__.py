@@ -12,9 +12,7 @@ from .dicerlib.manifest import dice_docs
 from .dicerlib.refactor import list_runins, refactor
 from .dicerlib.textfile import read_lines
 from .dicerlib.treecheck import check_trees
-
-version = "0.5.0"
-
+from .__init__ import __version__
 
 def _keep_list() -> list[str]:
     """Titles never converted: the comma list in DICER_KEEP, default "Open"; empty keeps none."""
@@ -67,7 +65,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parser.parse_args(argv)
     out, err = sys.stdout, sys.stderr
     if args.command == "version":
-        print(version)
+        print(__version__)
         sys.exit(0)
     if args.command == "dice-doc":
         return dice_doc(args.monolith, args.out, args.map, stdout=out, stderr=err)
