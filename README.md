@@ -16,6 +16,11 @@ to a repository. Run them from the directory the documents' relative links are w
 
 <https://keyoxide.org/wkd/benn@bennherrera.dev>
 
+## Installation
+```bash
+pip install git+https://github.com/benn-herrera/docdicer
+```
+
 ## Tools
 
 One CLI, `python3 -m docdicer <command> ...` with this repository's root (the directory holding
