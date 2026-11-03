@@ -134,11 +134,3 @@ class Outline:
             numbered = self.sections[numbered].parent
         prefix = f"§{self.sections[numbered].number} " if numbered > 0 else ""
         return prefix + self.sections[sid].title
-
-
-def load_outline(sections: list[Section], *, err: TextIO) -> Outline:
-    """An Outline, reporting section numbers that more than one heading carries."""
-    outline = Outline(sections)
-    for number in outline.duplicate_numbers:
-        print(f"duplicate section number {number}", file=err)
-    return outline

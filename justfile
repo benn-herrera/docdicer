@@ -6,7 +6,7 @@ VENV_PYTHON := VENV / PYBIN / "python" + EXE
 
 [doc("run the docdicer's golden tests")]
 test: _venv
-  PYTHONPATH="{{PROJECT_ROOT}}" "{{VENV_PYTHON}}" "{{PROJECT_ROOT}}/docdicer/test/test_dicer.py"
+  PYTHONPATH="{{PROJECT_ROOT}}" "{{VENV_PYTHON}}" -m pytest docdicer
 
 [doc("build the docdicer wheel into dist/")]
 build: _venv

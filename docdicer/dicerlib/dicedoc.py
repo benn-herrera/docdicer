@@ -8,10 +8,15 @@ from typing import TextIO
 from .heads import HEADS
 from .linkcheck import check_links
 from .linkrewrite import LinkMap, Tree
-from .outline import plan_sections
+from .outline import Outline, Section, plan_sections
 from .reassemble import check_reassembly
 from .split import write_tree
 from .textfile import read_lines, split_lines
+
+
+def _warn_duplicate_numbers(sections: list[Section], *, err: TextIO) -> None:
+    for number in Outline(sections).duplicate_numbers:
+        print(f"duplicate section number {number}", file=err)
 
 
 def _tree(out: str, map_path: str) -> Tree:
@@ -29,6 +34,9 @@ def dice_doc(monolith: str, out: str, map_path: str, *, stdout: TextIO, stderr: 
     if map_path and not os.path.isfile(map_path):
         print(f"not a file: {map_path}", file=stderr)
         return 2
+    if os.path.exists(out) and not os.path.isdir(out):
+        print(f"not a directory: {out}", file=stderr)
+        return 2
     if os.path.isdir(out) and os.listdir(out):
         print(f"out-dir not empty: {out}", file=stderr)
         return 2
@@ -38,6 +46,7 @@ def dice_doc(monolith: str, out: str, map_path: str, *, stdout: TextIO, stderr: 
     sections, ok = plan_sections(lines, err=stderr)
     if not ok:
         return 1
+    _warn_duplicate_numbers(sections, err=stderr)
     for s in sections:
         os.makedirs(os.path.join(out, posixpath.dirname(s.path)), exist_ok=True)
     write_tree(sections, lines, tree, err=stderr)
@@ -72,6 +81,7 @@ def verify(map_path: str, pairs: list[tuple[str, str]], *, stdout: TextIO, stder
             rc = 1
             continue
         sections, ok = plan_sections(lines, err=stderr)
+        _warn_duplicate_numbers(sections, err=stderr)
         if not ok:
             rc = 1
         if not check_reassembly(sections, lines, tree, out=stdout, err=stdout):

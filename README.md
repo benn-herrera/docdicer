@@ -51,14 +51,14 @@ fails, 2 on bad arguments.
   made `-`; a repeat in one file takes `-1`, `-2`, … in order. It is not a leaf's file-name slug.
   Headings inside fenced code have none. Links with a URL scheme and root-absolute `/` links are
   skipped. Prints `file:line: target: missing file` or `missing anchor` to stderr per broken link,
-  then the count; exit 1 if any is broken, 2 on bad arguments or a missing root.
+  then the count; exit 1 if any is broken, 2 on bad arguments, a missing root or an unreadable file.
 - `check-tree <root>...` checks a diced tree's structure, which no link check sees: every
   document is linked from its parent, and every document is reachable by links from the root's
   `entry-point.md`. A directory's head is its `entry-point.md` where it has one (the root, a diced
   volume), else its `index.md`; a document's parent is its directory's head, and a head's parent
   is the head above it. A leaf that its index stopped listing fails even where another document,
-  such as the entry point's contents, still links it. Exit 1 on any problem, 2 on bad arguments
-  or a root that is not a directory.
+  such as the entry point's contents, still links it. Exit 1 on any problem, 2 on bad arguments,
+  a root that is not a directory, or an unreadable `.md` under one.
 
 The passes behind them live in `dicerlib/`, one module each: `outline` (headings to files),
 `split` (writing the tree), `linkrewrite` (section links, rebasing, the map), `reassemble` and
@@ -125,7 +125,7 @@ parent's entry point gains a line for it. Parents precede children. Documents li
 - Reassembly: concatenating the leaves in order, with the added `Contents:` blocks removed and
   section links reverted, reproduces the monolith's lines exactly (outside links are compared in
   their rewritten form). Proves nothing was lost, moved or edited.
-- Links: every link in the output without a URL scheme, root-absolute `/` links included, resolves
+- Links: every link in the output, root-absolute `/` links and links with a URL scheme skipped, resolves
   to an existing file from the linking file's directory. Proves the tree and the cross-document map
   are consistent; it does not check `#anchor` fragments, which `check-links` does.
 

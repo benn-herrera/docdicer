@@ -49,7 +49,7 @@ class GoldenCases(unittest.TestCase):
         for case in cases:
             with self.subTest(case=case.name), tempfile.TemporaryDirectory(dir=_scratch_root()) as scratch:
                 run = Path(scratch) / "run"
-                shutil.copytree(case / "input", run)
+                shutil.copytree(case / "input", run, symlinks=True)
                 args = (case / "args").read_text(encoding="utf-8").splitlines()
                 proc = subprocess.run(
                     [sys.executable, f"-m{MODULE}", *args], cwd=run, env=_case_env(case), capture_output=True

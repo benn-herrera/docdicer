@@ -4,7 +4,7 @@ the entry point and each section index end with a Contents block listing what is
 from typing import TextIO
 
 from .linkrewrite import Linker, Tree, parent_dir, rel
-from .outline import Outline, Section, load_outline
+from .outline import Outline, Section
 from .textfile import fence_flags, write_lines
 
 
@@ -23,7 +23,7 @@ def contents_block(outline: Outline, section: Section) -> list[str]:
 
 
 def write_tree(sections: list[Section], lines: list[str], tree: Tree, *, err: TextIO) -> None:
-    outline = load_outline(sections, err=err)
+    outline = Outline(sections)
     linker = Linker(outline, tree, lines)
     fenced = fence_flags(lines)
     for s in sections:
