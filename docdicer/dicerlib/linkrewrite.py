@@ -6,6 +6,7 @@ path; "<target>\t<heading>\t<path>" sends a link whose following text quotes tha
 `, "The walk"`, to the heading's leaf.
 """
 
+import posixpath
 import re
 from dataclasses import dataclass, field
 from typing import Callable, Optional
@@ -151,6 +152,7 @@ class Linker:
         self.resolved = 0
         self.dangling: dict[str, int] = {}
         self.anchors = _anchor_homes(outline, lines or [])
+        self._anchor_at = {home: name for name, home in self.anchors.items()}
 
     def forward(self, line: str, leaf_dir: str, next_line: str) -> str:
         """Link section references and rebase outside links, for a line written under leaf_dir."""
@@ -166,6 +168,21 @@ class Linker:
             return text if self._made_by_forward(text, target, leaf_dir) else raw
 
         return _scan(line, unlink)
+
+    def restore(self, line: str, leaf_dir: str) -> str:
+        """Undo `forward` for a line read from under leaf_dir, as far as the tree allows: section
+        links become their text, a link to a heading's home becomes `#<anchor>`, every other relative
+        link is rebased back to the run directory."""
+
+        def restore_link(raw: str, text: str, target: str, after: str) -> str:
+            if self._made_by_forward(text, target, leaf_dir):
+                return text
+            anchor = self._anchor_linked(target, leaf_dir)
+            if anchor:
+                return f"[{text}](#{anchor})"
+            return f"[{text}]({self._unrebase(target, leaf_dir)})"
+
+        return _scan(line, restore_link)
 
     def _rebaser(self, leaf_dir: str, next_line: str) -> OnLink:
         def rebase(raw: str, text: str, target: str, after: str) -> str:
@@ -207,6 +224,13 @@ class Linker:
             dest = self.outline.path_of_number(number)
         return target == rel(leaf_dir, dest)
 
+    def _anchor_linked(self, target: str, leaf_dir: str) -> str:
+        """The anchor of the heading whose home in the tree a target under leaf_dir names; "" if none."""
+        if _never_rebased(target):
+            return ""
+        path, _, fragment = target.partition("#")
+        return self._anchor_at.get((posixpath.normpath(posixpath.join(leaf_dir, path)), fragment), "")
+
     def _rebase(self, target: str, leaf_dir: str, after: str, next_line: str) -> str:
         """An outside link target, relative to the run directory, made relative to leaf_dir; a
         target in the link map goes to its diced tree instead (the heading's leaf when the text
@@ -214,7 +238,7 @@ class Linker:
         if target.startswith("#") and target[1:] in self.anchors:
             path, anchor = self.anchors[target[1:]]
             return rel(leaf_dir, path) + (f"#{anchor}" if anchor else "")
-        if target == "" or URL_SCHEME.match(target) or target[0] in "#/":
+        if _never_rebased(target):
             return target
         path, hash_, fragment = target.partition("#")
         fragment = hash_ + fragment
@@ -227,5 +251,25 @@ class Linker:
             m = _QUOTED_HEADING.match(after)
             if m:
                 dest = link_map.headings.get((path, m.group(1)), dest)
-        here = self.tree.outabs + (f"/{leaf_dir}" if leaf_dir else "")
-        return rel(here, f"{self.tree.root}/{dest}") + fragment
+        return rel(self._here(leaf_dir), f"{self.tree.root}/{dest}") + fragment
+
+    def _unrebase(self, target: str, leaf_dir: str) -> str:
+        """A target relative to leaf_dir made relative to the run directory again: the lexical
+        inverse of `_rebase`'s `rel`, so a `./` or `..` the source wrote survives the round trip."""
+        if _never_rebased(target):
+            return target
+        path, hash_, fragment = target.partition("#")
+        here = self._here(leaf_dir).split("/")
+        while path.startswith("../") and len(here) > 1:
+            path = path[3:]
+            here.pop()
+        return rel(self.tree.root, "/".join([*here, path])) + hash_ + fragment
+
+    def _here(self, leaf_dir: str) -> str:
+        """The absolute path of leaf_dir, a directory of the tree."""
+        return self.tree.outabs + (f"/{leaf_dir}" if leaf_dir else "")
+
+
+def _never_rebased(target: str) -> bool:
+    """Empty, bare-fragment, root-absolute and URL targets mean the same from any directory."""
+    return target == "" or bool(URL_SCHEME.match(target)) or target[0] in "#/"

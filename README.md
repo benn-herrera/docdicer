@@ -31,6 +31,12 @@ fails, 2 on bad arguments.
 
 - `dice-doc <monolith.md> <out-dir> [map.tsv]` dices one document and runs the checks below.
   `out-dir` must be absent or empty.
+- `undice <tree-dir> <monolith.md>` writes a diced tree back out as one document: section links
+  return to `§N`, links to a heading's file return to `#anchor`, other relative links are rebased
+  to the run directory. It then checks that dicing the result reproduces the tree, Contents blocks
+  aside, reporting any `.md` the tree holds that it would not write. `monolith.md` must not exist.
+  The result need not equal the original source; a heading holding a markdown link loses its whole
+  section, which `undice` reports as unreadable and not reproduced.
 - `refactor <in.md> <out.md> [items]` turns bold run-in titles into headings (see Transforms);
   any `items` value other than empty or `0` converts bold list items too. Exit 1 on a bad hunk,
   2 on an unreadable input.
@@ -65,7 +71,7 @@ The passes behind them live in `dicerlib/`, one module each: `outline` (headings
 `linkcheck` (the checks, `check-links` included), `treecheck` (`check-tree`), `refactor` (run-ins
 and the hunk check), `dicedoc` and `manifest` (the drivers), with `heads` (head-file names) and
 `textfile` (file I/O and fenced code) beneath them all. `just test` runs the golden cases under
-`docdicer/test/data/`; `just build` builds a wheel into `dist/`.
+`docdicer/test/data/` and an `undice` round trip over the diced ones; `just build` builds a wheel into `dist/`.
 
 ## Heading convention
 

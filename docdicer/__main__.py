@@ -10,7 +10,7 @@ import sys
 from typing import Optional, TextIO
 
 from . import __version__
-from .dicerlib.dicedoc import dice_doc, verify
+from .dicerlib.dicedoc import dice_doc, undice, verify
 from .dicerlib.linkcheck import check_markdown_links, markdown_files
 from .dicerlib.manifest import dice_docs
 from .dicerlib.refactor import list_runins, refactor
@@ -43,6 +43,10 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("monolith", help="the markdown document to dice")
     p.add_argument("out", help="output directory, absent or empty")
     p.add_argument("map", nargs="?", default="", help="link map TSV")
+
+    p = commands.add_parser("undice", help="write a diced tree back out as one document, then check it dices back")
+    p.add_argument("tree", help="a diced tree's directory, holding its entry-point.md")
+    p.add_argument("monolith", help="the document to write; must not exist")
 
     p = commands.add_parser("dice-docs", help="dice the documents a manifest TSV lists, then verify them all")
     p.add_argument("manifest", help="manifest TSV naming the documents and their output directories")
@@ -79,6 +83,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     out, err = sys.stdout, sys.stderr
     if args.command == "dice-doc":
         return dice_doc(args.monolith, args.out, args.map, stdout=out, stderr=err)
+    if args.command == "undice":
+        return undice(args.tree, args.monolith, stdout=out, stderr=err)
     if args.command == "dice-docs":
         return dice_docs(args.manifest, args.src, args.work, keep=_keep_list(), stdout=out, stderr=err)
     if args.command == "verify":
