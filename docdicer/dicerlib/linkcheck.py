@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Iterator, TextIO
 
 from .linkrewrite import URL_SCHEME, Tree, link_targets, parent_dir
-from .outline import Section, load_outline
+from .outline import Section
 from .textfile import FenceTracker, read_lines
 
 _ATX_HEADING = re.compile(r" {0,3}#{1,6}(?:[ \t]|$)")
@@ -25,7 +25,6 @@ def prose_links(lines: list[str]) -> Iterator[tuple[int, str]]:
 
 
 def check_links(sections: list[Section], tree: Tree, *, out: TextIO, err: TextIO) -> bool:
-    load_outline(sections, err=err)
     links = []  # (path to probe, "file:line" of the link, target as written)
     for s in sections:
         path = f"{tree.out}/{s.path}"
@@ -36,7 +35,7 @@ def check_links(sections: list[Section], tree: Tree, *, out: TextIO, err: TextIO
             continue
         for no, target in prose_links(leaf):
             target = target.partition("#")[0]
-            if target == "" or URL_SCHEME.match(target):
+            if target == "" or target.startswith("/") or URL_SCHEME.match(target):
                 continue
             probe = f"{tree.out}/{leaf_dir}/{target}" if leaf_dir else f"{tree.out}/{target}"
             links.append((probe, f"{path}:{no}", target))

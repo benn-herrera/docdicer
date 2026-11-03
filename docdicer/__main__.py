@@ -7,11 +7,11 @@ Exit status: 0 on success, 1 when a check or step fails, 2 on bad arguments.
 import argparse
 import os
 import sys
-from typing import Optional
+from typing import Optional, TextIO
 
 from . import __version__
 from .dicerlib.dicedoc import dice_doc, verify
-from .dicerlib.linkcheck import check_markdown_links
+from .dicerlib.linkcheck import check_markdown_links, markdown_files
 from .dicerlib.manifest import dice_docs
 from .dicerlib.refactor import list_runins, refactor
 from .dicerlib.textfile import read_lines
@@ -22,6 +22,14 @@ def _keep_list() -> list[str]:
     """Titles never converted: the comma list in DICER_KEEP, default "Open"; empty keeps none."""
     keep = os.environ.get("DICER_KEEP", "Open")
     return keep.split(",") if keep else []
+
+
+def _refuse_unreadable(roots: list[str], *, err: TextIO) -> bool:
+    """Report each markdown file under roots that cannot be read as a file; True if any."""
+    unreadable = [f for f in markdown_files(roots) if not (os.path.isfile(f) and os.access(f, os.R_OK))]
+    for f in unreadable:
+        print(f"cannot read: {f}", file=err)
+    return bool(unreadable)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -85,13 +93,22 @@ def main(argv: Optional[list[str]] = None) -> int:
         missing = [root for root in args.roots if not os.path.exists(root)]
         if missing:
             parser.error(f"no such root: {', '.join(missing)}")
+        if _refuse_unreadable(args.roots, err=err):
+            return 2
         return 0 if check_markdown_links(args.roots, out=out, err=err) else 1
     if args.command == "check-tree":
         missing = [root for root in args.roots if not os.path.isdir(root)]
         if missing:
             parser.error(f"no such directory: {', '.join(missing)}")
+        if _refuse_unreadable(args.roots, err=err):
+            return 2
         return 0 if check_trees(args.roots, out=out, err=err) else 1
-    for row in list_runins(read_lines(args.doc), name=args.doc, keep=_keep_list()):
+    try:
+        lines = read_lines(args.doc)
+    except OSError:
+        print(f"not a file: {args.doc}", file=err)
+        return 2
+    for row in list_runins(lines, name=args.doc, keep=_keep_list()):
         print(row, file=out)
     return 0
 

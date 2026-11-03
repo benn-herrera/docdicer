@@ -18,3 +18,8 @@ instead of "all of the project docs, the entire design doc, the entire plan doc"
 ### More efficient discovery
 When an agent arrives at a decision point and they need information they can hunt for it through
 a lightweight search path and arrive at pay dirt with less wasted space en route
+
+## A small tool for small job
+This tools is ultimately simple and targeted. It performs a useful function in a low-consequences,
+high-forgiveness environment where light simplicity is more valuable than an exhaustive feature set
+paid for code and time.

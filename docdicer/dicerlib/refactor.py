@@ -220,10 +220,9 @@ def refactor(in_path: str, out_path: str, *, items: bool, keep: Iterable[str], o
     new_lines, skipped = convert_runins(split_lines(old_text), items=items, keep=keep)
     write_lines(out_path, new_lines)
     write_lines(out_path + ".skipped", skipped)
-    print(f"{in_path}: {len(skipped)} long titles skipped; ", end="", file=out)
     count, bad = check_hunks(old_text, join_lines(new_lines))
     for line in bad:
         print(line, file=out)
     # With no hunks the count prints empty, as the summary always has.
-    print(f"merged hunks {count or ''} bad {len(bad)}", file=out)
+    print(f"{in_path}: {len(skipped)} long titles skipped; merged hunks {count or ''} bad {len(bad)}", file=out)
     return 1 if bad else 0

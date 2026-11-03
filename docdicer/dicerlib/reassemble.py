@@ -4,12 +4,12 @@ links reverted, reproduce the monolith line for line (outside links compared in 
 from typing import TextIO
 
 from .linkrewrite import Linker, Tree, parent_dir
-from .outline import Section, load_outline
+from .outline import Outline, Section
 from .textfile import FenceTracker, fence_flags, read_lines
 
 
 def check_reassembly(sections: list[Section], lines: list[str], tree: Tree, *, out: TextIO, err: TextIO) -> bool:
-    linker = Linker(load_outline(sections, err=err), tree, lines)
+    linker = Linker(Outline(sections), tree, lines)
     fenced = fence_flags(lines)
     k = 0
     for s in sections:
