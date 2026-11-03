@@ -1,0 +1,37 @@
+stdout	src/SPEC.md	0	1	0
+stdout	src/ARCH.md	0	1	0
+stdout	SPEC.md
+stdout	2	0
+stdout	20
+stdout	12	4
+stdout	ARCH.md
+stdout	0	0
+stdout	19
+stdout	8	0
+stdout	scoring-a.md
+stdout	0	0
+stdout	7
+stdout	2	1
+stdout	scoring-b.md
+stdout	0	0
+stdout	7
+stdout	1	0
+stdout	work/SPEC.md	out/SPEC
+stdout	20
+stdout	13	0
+stdout	5
+stdout	work/ARCH.md	out/ARCH
+stdout	19
+stdout	8	0
+stdout	3
+stdout	src/scoring-a.md	out/SPEC/scoring/a
+stdout	7
+stdout	2	0
+stdout	1
+stdout	src/scoring-b.md	out/SPEC/scoring/b
+stdout	7
+stdout	1	0
+stdout	1
+stdout
+stdout	out/SPEC/scoring/index.md
+stdout	out/entry-point.md

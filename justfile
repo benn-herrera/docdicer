@@ -6,7 +6,7 @@ VENV_PYTHON := "\"" + VENV / PYBIN / "python" + EXE + "\""
 
 DD_PYTHON := "PYTHONPATH=\"" + PROJECT_ROOT + "\" " + VENV_PYTHON
 
-[doc("run the docdicer's golden tests")]
+[doc("run docdicer's tests: the golden cases, the round trip and the per-module unit tests")]
 test: _venv
   {{DD_PYTHON}} -m pytest --basetemp="{{PROJECT_ROOT}}/docdicer/test/temp" docdicer
 

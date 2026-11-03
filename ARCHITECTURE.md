@@ -15,7 +15,7 @@ Python ≥ 3.9, standard library only; packaging is in `pyproject.toml`.
 
 ## §2 Package map
 
-`__init__` (`__version__`) and `__main__` are in `docdicer/`; every other module is in `docdicer/dicerlib/`. Tests: `docdicer/test/test_dicer.py`, cases in `docdicer/test/data/<case>/` (§8).
+`__init__` (`__version__`) and `__main__` are in `docdicer/`; every other module is in `docdicer/dicerlib/`. Tests: `docdicer/test/test_dicer.py`, cases in `docdicer/test/data/<case>/`, and the per-module unit test files beside it (§8).
 
 | Module | Responsibility |
 |---|---|
@@ -137,24 +137,25 @@ Both walk files with `markdown_files` and read links with `prose_links` (§6). `
 
 ## §8 Test harness
 
-`docdicer/test/test_dicer.py` has three `unittest` classes.
+`docdicer/test/test_dicer.py` holds the end-to-end harness as pytest functions; the per-module unit test files are named below.
 
-`GoldenCases.test_cases` enumerates the directories under `data/`; each is a subtest. A case holds:
+`test_cases` is parametrized over the directories under `data/`, one test per case, its id the directory name; `test_cases_exist` requires at least one case. A case holds:
 
 | Path | Content |
 |---|---|
 | `input/` | the working tree the command runs in (symlinks copied as symlinks) |
 | `args` | the command-line arguments, one per line |
 | `env` | optional `KEY=VALUE` lines; `DICER_KEEP` is removed from the inherited environment otherwise |
-| `expected/stdout`, `expected/stderr` | exact bytes |
+| `expected/names` | the values the output carries, one entry per output line: `<stream>[\t<name>...]`, `<stream>` being `stdout` or `stderr`; any other line, or an empty name, is malformed, and an empty file is valid. A stream's lines are its bytes split at `\n` after removing one final `\n`; a non-empty stream must end in `\n`, and an empty one has no lines. A stream has exactly as many lines as entries, and passes when each entry is given a distinct line it matches (bipartite matching by augmenting paths); a stream with no entries is empty. An entry of `<stream>` alone matches any line; otherwise its names are found left to right, each search starting where the previous match ended, each name a whole token: no ASCII letter or digit beside it, nor a `.` or `-` joined to one. Matching is on bytes, each name encoded UTF-8 with `surrogateescape`. A `list` case's entries name `stderr` only. The harness sets `COLUMNS=1000`, so an argparse usage line never wraps |
+| `expected/stdout` | `list` cases only: exact bytes (SPEC §9.2 rows are contract) |
 | `expected/exit` | the status and a newline |
 | `expected/tree/` | every file of the working tree after the run, inputs included |
 
-The harness copies `input/` to a scratch directory under `docdicer/test/temp/` (git-ignored), runs `sys.executable -m docdicer <args>` there as a subprocess, and compares stdout, stderr, the exit status and a `{relative path: bytes}` map of all files. Only files are compared, so empty directories are not asserted.
+The harness copies `input/` into the test's pytest `tmp_path`, which `just test` places under `docdicer/test/temp/` (git-ignored) through `--basetemp`, and which pytest deletes and recreates on each run; it runs `sys.executable -m docdicer <args>` there as a subprocess, and compares the exit status, a `{relative path: bytes}` map of all files, the `expected/names` assertions, and for `list` cases stdout. Only files are compared, so empty directories are not asserted.
 
-`RoundTrip.test_undice_then_dice_reproduces_the_tree` takes every case whose args are `dice-doc` with no map and whose expected exit is 0, copies its `expected/tree/` to a scratch directory, runs `undice <out> mono.md`, renames `<out>` aside, runs `dice-doc mono.md <out>`, and requires both runs to exit 0, at least one case to qualify, and the two trees' file maps equal (SPEC §6.1). Both runs go through the same subprocess call as the golden cases.
+`test_undice_then_dice_reproduces_the_tree` is parametrized over every case whose args are `dice-doc` with no map and whose expected exit is 0; each copies its `expected/tree/` into its `tmp_path`, runs `undice <out> mono.md`, renames `<out>` aside, runs `dice-doc mono.md <out>`, and requires both runs to exit 0 and the two trees' file maps equal (SPEC §6.1). `test_round_trip_cases_exist` requires at least one case to qualify. Both runs go through the same subprocess call as the golden cases.
 
-`HunkCheck` calls `check_hunks` directly to assert that an edit beyond a conversion is reported `BAD`.
+The per-module unit tests call the owning functions directly: `test_textfile.py`, `test_outline.py`, `test_split.py`, `test_linkcheck.py`, `test_reassemble.py`, `test_linkrewrite.py`, `test_undice.py`, `test_refactor.py`, `test_treecheck.py`.
 
 ## §9 Extension points
 

@@ -74,8 +74,9 @@ The passes behind them live in `dicerlib/`, one module each: `outline` (headings
 `split` (writing the tree), `linkrewrite` (section links, rebasing, the map), `reassemble` and
 `linkcheck` (the checks, `check-links` included), `treecheck` (`check-tree`), `refactor` (run-ins
 and the hunk check), `dicedoc` and `manifest` (the drivers), with `heads` (head-file names) and
-`textfile` (file I/O and fenced code) beneath them all. `just test` runs the golden cases under
-`docdicer/test/data/` and an `undice` round trip over the diced ones; `just build` builds a wheel into `dist/`.
+`textfile` (file I/O and fenced code) beneath them all. `just test` runs one pytest test per golden
+case under `docdicer/test/data/`, one `undice` round trip per case that dices without a map and succeeds, and the
+per-module unit tests; `just build` builds a wheel into `dist/`.
 
 ## Heading convention
 

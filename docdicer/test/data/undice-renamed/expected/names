@@ -1,0 +1,3 @@
+stdout	1	0
+stderr	reassemble: cannot read	out/1-a.md
+stderr	out/a-renamed.md	out	1-a.md

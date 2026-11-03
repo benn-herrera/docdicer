@@ -1,0 +1,5 @@
+stdout	doc.md	out
+stdout	13
+stdout	7	0
+stdout	2
+stderr	duplicate section number	1

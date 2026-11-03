@@ -1,0 +1,5 @@
+stdout	2	0
+stderr	reassemble: cannot read	out/1-b.md
+stderr	out/1-b-renamed.md	out	1-b.md
+stderr	out/a.md	opens no section
+stderr	not reproduced	out/sub/extra.md	out

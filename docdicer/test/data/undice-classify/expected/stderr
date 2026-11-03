@@ -1,4 +1,0 @@
-reassemble: cannot read out/1-b.md
-undice: out/1-b-renamed.md would be re-diced as out/1-b.md: rename the file or edit its heading to match
-undice: out/a.md opens no section: start it with a level 2 to 4 heading, or remove it and its Contents line
-undice: not reproduced: out/sub/extra.md: link it from out/entry-point.md's Contents, or remove it

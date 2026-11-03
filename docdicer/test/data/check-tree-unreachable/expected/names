@@ -1,0 +1,4 @@
+stdout	4	3
+stderr	docs/section/index.md	not linked	docs/entry-point.md
+stderr	docs/section/child.md	not reachable	docs/entry-point.md
+stderr	docs/section/index.md	not reachable	docs/entry-point.md
