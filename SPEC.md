@@ -2,7 +2,7 @@
 
 Consumer-facing behaviours and outcomes; any implementation that satisfies them is valid.
 
-Message texts, file names and output shapes are contract; varying text appears in `<angle brackets>`.
+File names, the files a command writes and their content, exit statuses, the stream each message goes to, and output SPEC gives as a row format (§9.2) are contract. Message wording is not: the messages below give current wording. What is contract is which fault or result each message reports, the values it carries, shown in `<angle brackets>` (a file, a line, a heading, a count), and the remedy it names.
 
 ## §1 What docdicer is
 
