@@ -38,16 +38,19 @@ tag: _tag-clean _venv
 
 # Lazy: if the venv's python already exists this is a no-op; a half-built
 # venv is repaired by deleting .venv and re-running.
-# The tool versions are pinned on the install line, so a venv rebuild cannot
-# silently change what `just format` and `just test` do; bumping one is
-# an edit to that line, visible in the diff. `pip` stays unpinned: it installs,
-# it does not produce output a change depends on.
+# The tool versions on the install line are floors that run on the minimum
+# Python: a venv rebuild takes the newest release that installs there, so
+# `just format` can reformat after a rebuild.
 [private]
 _venv:
   #!/usr/bin/env bash
   set -euo pipefail
   if [[ ! -x {{VENV_PYTHON}} ]]; then
+    # if /usr/bin/python3 is installed it is the crappy 3.9.6 from xcode command line tools
+    # that is actually our minspec, so use it to ensure we're not using any features
+    # beyond its ken
+    [[ "$(uname)" == Darwin ]] && export PATH=/usr/bin/:${PATH} || true
     python3 -m venv "{{VENV}}"
     {{VENV_PYTHON}} -m pip install pip --upgrade
-    {{VENV_PYTHON}} -m pip install pytest==9.2.0 isort==9.0.2 black==26.10.1 flake8==7.5.0
+    {{VENV_PYTHON}} -m pip install "pytest>=8.4" "isort>=6.1" "black>=25.11" "flake8>=7.3"
   fi
