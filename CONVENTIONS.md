@@ -5,16 +5,33 @@
 Tests protect logic. A test that fails when only wording or formatting changes is friction, not
 protection.
 
-- Each rule SPEC states about a function's result gets a unit test against the function that owns
-  it, so a failure names the rule and where it lives. Rules about a command's exit status and the
-  files it writes are covered by end-to-end cases.
+- Every SPEC requirement is tested to hold: if it stopped holding, a test would fail. Test it at
+  the lowest level that can observe it — a unit test where a function owns the logic, an
+  end-to-end case where only a command's behaviour shows it. Tests are organized by the code they
+  exercise, not by SPEC's structure.
 - No test asserts message wording. Where a message carries a result (which file a check flagged),
   a test asserts only the values it carries (SPEC preamble).
 - Tests are written for pytest: plain `assert`, `@pytest.mark.parametrize` for a rule's table of
-  inputs and results, and fixtures (`tmp_path`, `capsys`) instead of hand-managed directories and
-  streams.
+  inputs and results, and `tmp_path` instead of a hand-managed directory. A function that takes its
+  output stream gets an `io.StringIO`; `capsys` is for output printed to the process streams.
 - Expected results are derived from SPEC, never copied from program output.
 - A behaviour change lands with the tests that pin it, in the same commit.
+
+## Dependencies
+
+- Shipped code (`docdicer/` outside `docdicer/test/`) uses the standard library only and runs on
+  Python 3.9 and later.
+- Test code is idiomatic pytest on the same minimum Python. Test and development code use only the
+  dev tools on `justfile`'s `_venv` install line; adding one to that line is an owner decision:
+  propose it, don't add it.
+
+## Document size
+
+- A plan or project document (THESIS, SPEC, ARCHITECTURE, CONVENTIONS, ACTIVE_PLAN.md) that grows
+  past 800 lines is diced with docdicer, in two commits: the change that takes it past 800 lines is
+  committed as is; a separate commit dices it, removes the monolith, and updates every link to the
+  monolith to point into the tree. From then on the tree is the source; `undice` gives a monolith
+  for whole-document work, which is diced again after.
 
 ## Plan & Execute
 

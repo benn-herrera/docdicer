@@ -7,6 +7,9 @@ be efficiently consumed based on need.
 - Complex SPEC.md, ARCHITECTURE.md, CONVENTIONS.md files
 - Large generated design docs and working plans
 
+docdicer's own documents are diced only once one passes 800 lines; below that, a single file is cheap enough to
+read whole.
+
 <img src="readme-img.png" width="25%"/>
 
 Python 3.9 or later, standard library only; the tools take every input as an argument and name nothing specific
