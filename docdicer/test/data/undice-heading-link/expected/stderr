@@ -1,2 +1,2 @@
 undice: cannot read out/#1-first
-undice: not reproduced: out/2-compare-1-with-the-first-1-first.md
+undice: not reproduced: out/2-compare-1-with-the-first-1-first.md: link it from out/entry-point.md's Contents, or remove it
