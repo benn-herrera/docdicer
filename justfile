@@ -24,8 +24,8 @@ format: _venv
 _tag-clean:
   @git diff --quiet HEAD || { echo "tag: tracked files have uncommitted changes — commit them, then tag" >&2; exit 1; }
 
-[doc("NEEDS a signing key git tag -s can use: create and verify a signed annotated tag v<version>, <version> being go run ./cmd --version; runs no gates, pushes nothing")]
-tag: _tag-clean
+[doc("NEEDS a signing key git tag -s can use: create and verify a signed annotated tag v<version>, <version> being docdicer --version; runs no gates, pushes nothing")]
+tag: _tag-clean _venv
   #!/usr/bin/env bash
   set -euo pipefail
   ver=v$({{DD_PYTHON}} -m docdicer --version)

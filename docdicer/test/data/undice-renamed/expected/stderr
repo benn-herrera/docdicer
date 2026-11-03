@@ -1,0 +1,2 @@
+reassemble: cannot read out/1-a.md
+undice: out/a-renamed.md would be re-diced as out/1-a.md: rename the file or edit its heading to match

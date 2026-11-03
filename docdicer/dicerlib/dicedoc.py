@@ -3,7 +3,7 @@
 import io
 import os
 import posixpath
-from typing import TextIO
+from typing import Optional, TextIO
 
 from .heads import ENTRY_POINT, HEADS, INDEX
 from .linkcheck import check_links, heading_anchor_list, markdown_files
@@ -63,9 +63,11 @@ def _own_and_contents(out: str, path: str) -> tuple[list[str], list[str]]:
     return (lines, []) if cut < 0 else (lines[:cut], lines[cut:])
 
 
-def _undiced_lines(tree: Tree, *, err: TextIO) -> tuple[list[str], bool]:
+def _undiced_lines(tree: Tree, *, err: TextIO) -> tuple[list[str], bool, list[tuple[str, Optional[int]]]]:
     """The entry point, then each file its Contents block lists, Contents dropped, links restored;
-    and whether every listed file could be read (each that could not is reported to err)."""
+    whether every listed file could be read (each that could not is reported to err); and, for
+    every read in reading order, its normalized path and the 1-based line of the result its own
+    lines start at, None when it holds none."""
     entry, contents = _own_and_contents(tree.out, ENTRY_POINT)
     parts = [(ENTRY_POINT, entry)]
     all_read = True
@@ -85,7 +87,12 @@ def _undiced_lines(tree: Tree, *, err: TextIO) -> tuple[list[str], bool]:
         if restored == lines:
             break
         lines = restored
-    return lines, all_read
+    reads = []
+    first = 1 + len(entry)
+    for path, own in parts[1:]:
+        reads.append((posixpath.normpath(path), first if own else None))
+        first += len(own)
+    return lines, all_read, reads
 
 
 def _restored(parts: list[tuple[str, list[str]]], tree: Tree, lines: list[str]) -> list[str]:
@@ -100,17 +107,43 @@ def _restored(parts: list[tuple[str, list[str]]], tree: Tree, lines: list[str]) 
     return restored
 
 
-def _all_reproduced(out: str, sections: list[Section], *, err: TextIO) -> bool:
-    """Report each `.md` under out that the sections do not write, nested volumes aside."""
+def _all_reproduced(out: str, sections: list[Section], reads: list[tuple[str, Optional[int]]], *, err: TextIO) -> bool:
+    """Report each `.md` under out that the sections do not write, nested volumes aside, naming the
+    remedy: a file read as a section is renamed or its heading edited, a file read that opens none
+    gets a heading or is removed, any other is linked or removed.
+    reads are the (path, first line) pairs of `_undiced_lines`."""
     assigned = {s.path for s in sections}
-    strays = []
+    opened_at = {s.first: s for s in sections if s.path != ENTRY_POINT}
+    read_as: dict[str, Section] = {}
+    read: set[str] = set()
+    for path, first in reads:
+        read.add(path)
+        if first in opened_at:
+            read_as.setdefault(path, opened_at[first])
+    strays = 0
     for f in markdown_files([out]):
         parts = os.path.relpath(f, out).split(os.sep)
+        rel = "/".join(parts)
         nested = any(os.path.isfile(os.path.join(out, *parts[:i], ENTRY_POINT)) for i in range(1, len(parts)))
-        if "/".join(parts) not in assigned and not nested:
-            strays.append(f)
-    for f in strays:
-        print(f"undice: not reproduced: {f}", file=err)
+        if rel in assigned or nested:
+            continue
+        strays += 1
+        if rel in read_as:
+            planned = f"{out}/{read_as[rel].path}"
+            print(
+                f"undice: {f} would be re-diced as {planned}: rename the file or edit its heading to match",
+                file=err,
+            )
+        elif rel in read:
+            print(
+                f"undice: {f} opens no section: start it with a level 2 to 4 heading, or remove it and its Contents line",
+                file=err,
+            )
+        else:
+            print(
+                f"undice: not reproduced: {f}: link it from {out}/{ENTRY_POINT}'s Contents, or remove it",
+                file=err,
+            )
     return not strays
 
 
@@ -126,7 +159,7 @@ def undice(out: str, monolith: str, *, stdout: TextIO, stderr: TextIO) -> int:
         print(f"{monolith} exists: name another output, or move or delete it", file=stderr)
         return 2
     tree = _tree(out, "")
-    lines, all_read = _undiced_lines(tree, err=stderr)
+    lines, all_read, reads = _undiced_lines(tree, err=stderr)
     try:
         write_lines(monolith, lines)
     except OSError:
@@ -140,7 +173,7 @@ def undice(out: str, monolith: str, *, stdout: TextIO, stderr: TextIO) -> int:
         all_read,
         check_reassembly(sections, lines, tree, out=stdout, err=stderr),
         check_links(sections, tree, out=stdout, err=stderr),
-        _all_reproduced(out, sections, err=stderr),
+        _all_reproduced(out, sections, reads, err=stderr),
     ]
     return 0 if all(checks) else 1
 

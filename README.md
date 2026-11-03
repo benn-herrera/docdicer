@@ -34,7 +34,8 @@ fails, 2 on bad arguments.
 - `undice <tree-dir> <monolith.md>` writes a diced tree back out as one document: section links
   return to `§N`, links to a heading's file return to `#anchor`, other relative links are rebased
   to the run directory. It then checks that dicing the result reproduces the tree, Contents blocks
-  aside, reporting any `.md` the tree holds that it would not write. `monolith.md` must not exist.
+  aside, reporting any `.md` the tree holds that it would not write, naming the rename, heading
+  edit, Contents edit or removal that fixes it. `monolith.md` must not exist.
   The result need not equal the original source; a heading holding a markdown link loses its whole
   section, which `undice` reports as unreadable and not reproduced.
 - `refactor <in.md> <out.md> [items]` turns bold run-in titles into headings (see Transforms);
