@@ -8,7 +8,7 @@ Python ≥ 3.9, standard library only; packaging is in `pyproject.toml`.
 
 | Target | Effect |
 |---|---|
-| `just test` | creates `.venv` if absent, then runs `docdicer/test/test_dicer.py` with the project root on `PYTHONPATH` |
+| `just test` | creates `.venv` if absent, then runs pytest over `docdicer/` with the project root on `PYTHONPATH` |
 | `just build` | builds the wheel into `dist/` |
 | `just format` | black, isort, flake8 over `docdicer` |
 
