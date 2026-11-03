@@ -10,7 +10,8 @@ protection.
   end-to-end case where only a command's behaviour shows it. Tests are organized by the code they
   exercise, not by SPEC's structure.
 - No test asserts message wording. Where a message carries a result (which file a check flagged),
-  a test asserts only the values it carries (SPEC preamble).
+  a test asserts only the values it carries (SPEC preamble). Where messages share a stream and
+  their values, a test may name the fault by the one phrase SPEC gives for it.
 - Tests are written for pytest: plain `assert`, `@pytest.mark.parametrize` for a rule's table of
   inputs and results, and `tmp_path` instead of a hand-managed directory. A function that takes its
   output stream gets an `io.StringIO`; `capsys` is for output printed to the process streams.

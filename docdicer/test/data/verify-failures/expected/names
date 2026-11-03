@@ -1,0 +1,19 @@
+stdout	m1.md	t1
+stdout	9	t1/2-beta.md
+stdout	want	Beta text that will be edited in the leaf.
+stdout	got	Beta text that was edited in the leaf.
+stdout	3	0
+stdout	2
+stdout	m2.md	t2
+stdout	5
+stdout	t2/only.md	3	../ghost.md
+stdout	3	1
+stdout	1
+stdout	m3.md	t3
+stdout	leaves hold	5	6
+stdout	1	0
+stdout	1
+stdout	m4.md	t4
+stdout	no Contents block	t4/entry-point.md
+stdout	1	0
+stdout	1

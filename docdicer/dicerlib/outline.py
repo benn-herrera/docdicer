@@ -113,7 +113,7 @@ class Outline:
                 self.children.setdefault(s.parent, []).append(s.id)
                 self.depth[s.id] = self.depth.get(s.parent, 0) + 1
             if s.number:
-                if s.number in self.by_number:
+                if s.number in self.by_number and s.number not in self.duplicate_numbers:
                     self.duplicate_numbers.append(s.number)
                 self.by_number[s.number] = s.id
 

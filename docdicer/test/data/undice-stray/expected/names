@@ -1,0 +1,3 @@
+stdout	5
+stdout	1	0
+stderr	not reproduced	out/extra.md	out

@@ -1,0 +1,3 @@
+stdout	3	2
+stderr	doc.md	9	#don-t-stop	missing anchor
+stderr	doc.md	9	#fenced-only	missing anchor

@@ -58,7 +58,7 @@ A section's text runs from its heading line to the line before the next split he
 
 ### §3.2 File names and layout
 
-The heading text is what follows the `#` run and one space, with trailing spaces removed. A heading is **numbered** when its text opens with digits optionally followed by `.digits` groups, an optional `.`, and a space (`1.`, `2 `, `1.1.1.`). Its **number** is that prefix without the trailing `.`; its **title** is the rest. An unnumbered heading's title is its whole text.
+The heading text is what follows the `#` run, with leading and trailing spaces removed. A heading is **numbered** when its text opens with digits optionally followed by `.digits` groups, an optional `.`, and a space (`1.`, `2 `, `1.1.1.`). Its **number** is that prefix without the trailing `.`; its **title** is the rest. An unnumbered heading's title is its whole text.
 
 The **slug** of a title: ASCII uppercase lowered, backticks deleted, every maximal run of characters outside `a-z0-9` replaced by one `-`, leading and trailing `-` removed. Non-ASCII letters are separators, not transliterated.
 
@@ -261,7 +261,7 @@ A directory's **head** is its `entry-point.md` if present, else its `index.md`. 
 | parent has no link to it | `<file>: not linked from its parent <parent>` |
 | not reachable by following links from the root's `entry-point.md` | `<file>: not reachable from <entry-point>` |
 
-Links count as in §8.4. The summary `documents checked: <N>, problems: <P>` goes to stdout, summed over roots. Exit 1 if any problem.
+Links count as in §8.4. The summary `documents checked: <N>, problems: <P>` goes to stdout, summed over roots; `<N>` counts every `.md` file under a root, its `entry-point.md` included, and a root without `entry-point.md` counts none. Exit 1 if any problem.
 
 ## §9 Transforms
 
@@ -289,7 +289,7 @@ The **title** of a `RUNIN` or `ITEM` is X without one trailing `.` or `:`. A `RU
 - *Keep list.* A `RUNIN` or `ITEM` whose title exactly, case-sensitively equals an entry of `DICER_KEEP` (§2) is class `KEEP`.
 - *Long titles.* A `RUNIN` or `ITEM` of more than 8 words (split on spaces and tabs) is skipped and noted in `<out.md>.skipped` as `skipped long: line <N>: <title>`, one line per note; the file is empty if none.
 
-**Self-check.** After writing, the changed regions of the output against the input (regions separated only by up to three unchanged blank lines are merged) must each be exactly the conversion of its input lines under the rules above. The report goes to stdout, `<count>` empty when nothing changed:
+**Self-check.** After writing, the changed regions of the output against the input (regions separated only by up to three unchanged blank lines are merged) must each have a conversion's shape: each bold-led title line becomes a heading line (any level) holding the same title, any text after the bold follows after a blank line (a list item's heading is followed by a blank line even with no text), and a list item's continuation lines are dedented by two; every other line is unchanged. The check does not re-derive a line's class, the heading level or the keep list. The report goes to stdout, `<count>` empty when nothing changed:
 
 ```text
 <in.md>: <S> long titles skipped; merged hunks <count> bad <B>
@@ -305,7 +305,7 @@ Each region that is not a conversion prints `BAD merged hunk at old line <N>: <f
 
 - `<class>` is one of the §9.1 classes, `KEEP`, or the two `-OUTSIDE-SECTION` forms; a `RUNIN` or `ITEM` over 8 words is suffixed `(long)` (`RUNIN(long)`). `ITEM` rows appear whether or not `items` would convert them. Continuation lines of an `ITEM` are not reported.
 - `<new heading level>` is the enclosing level plus 1, not capped, for `RUNIN` and `ITEM` only; empty otherwise.
-- `<title>` is the title for `RUNIN`, `ITEM` and `KEEP`; for other classes the first 70 bytes of the line (a character may be cut).
+- `<title>` is the title for `RUNIN`, `ITEM`, `KEEP` and the `-OUTSIDE-SECTION` forms; for other classes the first 70 bytes of the line (a character may be cut).
 - `<enclosing heading text>` is the text of the last heading line above, as written (trailing spaces kept); empty before the first heading.
 
 ## §10 Limits

@@ -1,0 +1,4 @@
+stdout	8
+stdout	1	0
+stderr	undice: cannot read	out	#1-first
+stderr	not reproduced	out/2-compare-1-with-the-first-1-first.md	out
