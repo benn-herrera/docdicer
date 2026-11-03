@@ -8,7 +8,7 @@ DD_PYTHON := "PYTHONPATH=\"" + PROJECT_ROOT + "\" " + VENV_PYTHON
 
 [doc("run the docdicer's golden tests")]
 test: _venv
-  {{DD_PYTHON}} -m pytest docdicer
+  {{DD_PYTHON}} -m pytest --basetemp="{{PROJECT_ROOT}}/docdicer/test/temp" docdicer
 
 [doc("build the docdicer wheel into dist/")]
 build: _venv
