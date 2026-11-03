@@ -8,6 +8,14 @@ from .outline import Outline, Section
 from .textfile import FenceTracker, fence_flags, read_lines
 
 
+def contents_cut(lines: list[str]) -> int:
+    """Index of a head's Contents block: its last line that is exactly `Contents:`; -1 if none."""
+    cut = len(lines) - 1
+    while cut >= 0 and lines[cut] != "Contents:":
+        cut -= 1
+    return cut
+
+
 def check_reassembly(sections: list[Section], lines: list[str], tree: Tree, *, out: TextIO, err: TextIO) -> bool:
     linker = Linker(Outline(sections), tree, lines)
     fenced = fence_flags(lines)
@@ -20,13 +28,11 @@ def check_reassembly(sections: list[Section], lines: list[str], tree: Tree, *, o
             print(f"reassemble: cannot read {path}", file=err)
             return False
         if s.kind != "L":
-            cut = len(leaf)
-            while cut > 0 and leaf[cut - 1] != "Contents:":
-                cut -= 1
-            if cut == 0:
+            cut = contents_cut(leaf)
+            if cut < 0:
                 print(f"reassemble: no Contents block in {path}", file=err)
                 return False
-            leaf = leaf[: cut - 1]
+            leaf = leaf[:cut]
         leaf_dir = parent_dir(s.path)
         fence = FenceTracker()
         for line in leaf:

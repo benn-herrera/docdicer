@@ -23,12 +23,12 @@ Python ≥ 3.9, standard library only; packaging is in `pyproject.toml`.
 | `textfile` | File I/O (UTF-8, `surrogateescape`, `newline=""`); `\n`-only line splitting (`split_lines`, `terminated_lines`, `join_lines`); `is_blank`; `FenceTracker` / `fence_flags` (SPEC §3.1). |
 | `outline` | `plan_sections` turns lines into `Section` records (SPEC §3.1, §3.2); `Outline` gives lookups by number, children, depth and Contents link text. |
 | `refactor` | The bold-line classifier and converter (SPEC §9.1), the `list` rows (SPEC §9.2), and the `check_hunks` self-check. |
-| `linkrewrite` | The single link/reference scanner `_scan`, the `Linker` built on it, the `LinkMap` and `Tree` records, and the path helpers `rel` and `parent_dir` (SPEC §4, §5). |
+| `linkrewrite` | The single link/reference scanner `_scan`, the `Linker` built on it (forward rewriting and its inverse, `restore`), the `LinkMap` and `Tree` records, and the path helpers `rel` and `parent_dir` (SPEC §4, §5, §6.1). |
 | `split` | The write pass: each section's lines through `Linker.forward`, plus `contents_block` (SPEC §3.3), written under the output directory; prints the `refs linked` line. |
 | `reassemble` | The inverse of the write pass (SPEC §8.1). |
 | `linkcheck` | `check_links` (SPEC §8.2), `check_markdown_links` (SPEC §8.4), the GitHub anchor functions (SPEC §4.4), `prose_links`, `markdown_files`. |
 | `treecheck` | `check_trees` (SPEC §8.5). |
-| `dicedoc` | `dice_doc` (SPEC §6) and `verify` (SPEC §8.3); each reports duplicate section numbers once, after planning. |
+| `dicedoc` | `dice_doc` (SPEC §6), `undice` (SPEC §6.1) and `verify` (SPEC §8.3); each reports duplicate section numbers once, after planning. |
 | `manifest` | `dice_docs` (SPEC §7): manifest reading, refactor calls, link-map rows, group indexes, the entry point, the written-files check. |
 
 ## §3 Dependency direction
@@ -55,7 +55,7 @@ Exception: `linkrewrite._anchor_homes` imports `linkcheck.heading_anchor_list` i
 | `Outline` | `outline` | Indexes over `Section`s: `children`, `depth`, `by_number` (last duplicate wins, SPEC §3.2), `duplicate_numbers`. |
 | `LinkMap` | `linkrewrite` | `documents: target -> path` and `headings: (target, heading) -> path`, loaded from the TSV (SPEC §5). |
 | `Tree` | `linkrewrite` | One output tree: `out` as given (prefix of reported paths), `outabs` (real path), `root` (the run directory), and the `LinkMap`. |
-| `Linker` | `linkrewrite` | Holds `Outline`, `Tree`, the anchor-home table, and the `resolved` / `dangling` counters. Methods `forward`, `rebase_only`, `revert`. |
+| `Linker` | `linkrewrite` | Holds `Outline`, `Tree`, the anchor-home table and its inverse, and the `resolved` / `dangling` counters. Methods `forward`, `rebase_only`, `revert`, `restore`. |
 | `Anchor` | `linkcheck` | `base` and repeat-suffixed `name` of one heading. |
 | `_Volume`, `_Entry` | `manifest` | One diced manifest row (the document actually diced, its output directory, label, `file` key); the `entry` row. |
 | `_Hunk` | `refactor` | A merged changed region: start line, old lines, new lines. |
@@ -65,6 +65,10 @@ Exception: `linkrewrite._anchor_homes` imports `linkcheck.heading_anchor_list` i
 ### `dice-doc` (SPEC §6)
 
 `dice_doc` creates the output directory, then runs `read_lines` → `plan_sections` → `makedirs` per section directory → `write_tree` → `check_reassembly` → `check_links`, and returns 1 at the first failure. Planning reports every collision but stops at the first empty slug; any planning failure writes nothing.
+
+### `undice` (SPEC §6.1)
+
+`undice` refuses an unreadable entry point before checking whether the monolith exists. `_undiced_lines` reads the entry point and each file its Contents block links (`contents_cut` drops each head's block and what follows it), reporting each linked file it cannot read and returning, with the lines, whether all were read. It then restores links by repeated passes of `_restored`: each plans the lines it is given and builds a `Linker` over them, and runs `Linker.restore` over the files' own lines. The first pass works from the lines as read, whose headings still hold rewritten links and so plan and anchor wrongly; each later pass works from the previous output, and a chain of headings citing headings settles one link per pass. The passes stop at a fixpoint, or after one pass per heading line read plus one, keeping the last output. A heading holding a markdown link never settles; the self-check reports it. `undice` writes the result (a write failure returns 2 at once), plans it (a failure returns 1 at once), reports duplicate numbers, then runs `check_reassembly`, `check_links` and `_all_reproduced` (the stray-file check), all of them whatever the others return; an unread file fails the command even when they pass.
 
 ### `verify` (SPEC §8.3)
 
@@ -95,9 +99,10 @@ Both walk files with `markdown_files` and read links with `prose_links` (§6). `
 | `Linker.forward` | rebaser + reference linker | write pass |
 | `Linker.rebase_only` | rebaser | reassembly (expected side) |
 | `Linker.revert` | un-linker | reassembly (actual side) |
-| `link_targets` | collector | `prose_links` |
+| `Linker.restore` | un-linker, anchor restorer, un-rebaser | `undice` |
+| `link_targets` | collector | `prose_links`, `undice`'s read of Contents blocks |
 
-`revert` recognises a link as forward-made when its text starts with `§<digit>`, names a known number (and child name if present), and its target equals the path `forward` would compute; any other link is left as is.
+`restore` tries, in order: `revert`'s test for a section link; the inverted anchor-home table, keyed by the target resolved to a tree-root path and its fragment; `_unrebase`, the lexical inverse of `_rebase`'s `rel`. `revert` recognises a link as forward-made when its text starts with `§<digit>`, names a known number (and child name if present), and its target equals the path `forward` would compute; any other link is left as is.
 
 ### Rebasing
 
@@ -122,7 +127,7 @@ Both walk files with `markdown_files` and read links with `prose_links` (§6). `
 ## §7 Invariants
 
 - Head-file names are spelled only in `heads.py`; every other module imports them.
-- Fenced code is defined only by `FenceTracker`; `outline`, `split`, `reassemble`, `linkcheck` and `refactor` use it.
+- Fenced code is defined only by `FenceTracker`; `outline`, `split`, `reassemble`, `linkcheck`, `refactor` and `dicedoc` use it.
 - Only `textfile` opens files for text; passes use its readers and writers.
 - Passes are functions of their arguments and write only to the `out` / `err` streams they are given (drivers take `stdout` / `stderr`). Nothing below `__main__` touches `sys.stdout`, which is what lets `manifest` capture a volume's output in a `StringIO`. Drivers own filesystem layout and exit statuses.
 - `Section` lists are in document order with `id == index`; `sections[0]` is always the entry point.
@@ -131,7 +136,7 @@ Both walk files with `markdown_files` and read links with `prose_links` (§6). `
 
 ## §8 Test harness
 
-`docdicer/test/test_dicer.py` has two `unittest` classes.
+`docdicer/test/test_dicer.py` has three `unittest` classes.
 
 `GoldenCases.test_cases` enumerates the directories under `data/`; each is a subtest. A case holds:
 
@@ -145,6 +150,8 @@ Both walk files with `markdown_files` and read links with `prose_links` (§6). `
 | `expected/tree/` | every file of the working tree after the run, inputs included |
 
 The harness copies `input/` to a scratch directory under `docdicer/test/temp/` (git-ignored), runs `sys.executable -m docdicer <args>` there as a subprocess, and compares stdout, stderr, the exit status and a `{relative path: bytes}` map of all files. Only files are compared, so empty directories are not asserted.
+
+`RoundTrip.test_undice_then_dice_reproduces_the_tree` takes every case whose args are `dice-doc` with no map and whose expected exit is 0, copies its `expected/tree/` to a scratch directory, runs `undice <out> mono.md`, renames `<out>` aside, runs `dice-doc mono.md <out>`, and requires both runs to exit 0, at least one case to qualify, and the two trees' file maps equal (SPEC §6.1). Both runs go through the same subprocess call as the golden cases.
 
 `HunkCheck` calls `check_hunks` directly to assert that an edit beyond a conversion is reported `BAD`.
 
