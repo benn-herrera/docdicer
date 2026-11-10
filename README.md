@@ -1,20 +1,23 @@
 # docdicer
 
-A tool for dicing heavy monolithic markdown documents into a context-friendly file hierarchy, and for checking and viewing development plans as a board.
-Primary use case: turning large, complex model-facing project and plan documents into something that can
-be efficiently consumed based on need.
+A stdlib-only python 3.9 tool for transforming and viewing project markdown documents to facilitate AI-assisted development
 
-- Complex SPEC.md, ARCHITECTURE.md, CONVENTIONS.md files
-- Large generated design docs and working plans
+- Bidirectional transformation of heavy monolithic markdown documents to and from context-friendly file hierarchy
+  - Permanent project documents (SPEC, ARCHITECTURE, CONVENTIONS)
+  - Working design and plan docs 
+- Serves a kanban display of active designs and plans
 
-docdicer's own documents are diced only once one passes 800 lines; below that, a single file is cheap enough to
+docdicer's own documents will be diced when one passes 800 lines; below that, a single file is cheap enough to
 read whole.
 
-<img src="readme-img.png" width="25%"/>
+<img src="doctree.jpg" width="25%"/>
+
+<img src="kanban.jpg" width="75%"/>
+
+## Requirements
 
 Python 3.9 or later, standard library only. The dicing commands take every input as an argument and name nothing
 specific to a repository; run them from the directory the documents' relative links are written against.
-`check-plan` and `kanban` read a project's development-process files at their fixed names under the project root.
 
 ## Developer
 
