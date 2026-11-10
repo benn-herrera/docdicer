@@ -1,8 +1,10 @@
+import stat
 from pathlib import Path
 
 import pytest
 
-from docdicer.dicerlib.textfile import fence_flags, join_lines, read_lines, split_lines, write_lines
+from docdicer.dicerlib import textfile
+from docdicer.dicerlib.textfile import fence_flags, join_lines, read_lines, replace_lines, split_lines, write_lines
 
 
 @pytest.mark.parametrize(
@@ -72,3 +74,35 @@ F, T = False, True
 )
 def test_fence_flags(lines, flags):
     assert fence_flags(lines) == flags
+
+
+def test_replace_lines_writes_through_a_link_and_keeps_the_mode(tmp_path):
+    target, link = tmp_path / "doc.md", tmp_path / "link.md"
+    target.write_text("old\n", encoding="utf-8")
+    target.chmod(0o640)
+    link.symlink_to("doc.md")
+
+    replace_lines(str(link), ["new"])
+
+    assert target.read_text(encoding="utf-8") == "new\n"
+    assert link.is_symlink()
+    assert stat.S_IMODE(target.stat().st_mode) == 0o640
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["doc.md", "link.md"]
+
+
+def test_replace_lines_that_fails_leaves_the_old_file_whole_and_nothing_else(tmp_path, monkeypatch):
+    target = tmp_path / "doc.md"
+    target.write_text("old\n", encoding="utf-8")
+    markdown_at_rename = []
+
+    def rename_fails(source, destination):
+        markdown_at_rename.extend(p.name for p in tmp_path.iterdir() if p.suffix == ".md")
+        raise OSError("disk full")
+
+    monkeypatch.setattr(textfile.os, "replace", rename_fails)
+    with pytest.raises(OSError):
+        replace_lines(str(target), ["new"])
+
+    assert markdown_at_rename == ["doc.md"]  # the file being written is no `.md` a directory scan would read
+    assert target.read_text(encoding="utf-8") == "old\n"
+    assert [p.name for p in tmp_path.iterdir()] == ["doc.md"]

@@ -3,7 +3,7 @@ import re
 
 import pytest
 
-from docdicer.dicerlib.outline import Outline, plan_sections, slug, split_number
+from docdicer.dicerlib.outline import Outline, plan_sections, section_name, slug, split_number
 
 
 def _numbers(line):
@@ -55,6 +55,19 @@ def test_slug(title, expected):
 )
 def test_split_number(text, number, title):
     assert split_number(text) == (number, title)
+
+
+@pytest.mark.parametrize(
+    "text, name",
+    [
+        pytest.param("1.2. Deep Dive", "1.2-deep-dive", id="numbered"),
+        pytest.param("3. ä", "3", id="numbered-empty-slug"),
+        pytest.param("Deep Dive", "deep-dive", id="unnumbered"),
+        pytest.param("ä", "", id="unnumbered-empty-slug"),
+    ],
+)
+def test_section_name(text, name):
+    assert section_name(text) == name
 
 
 def test_split_levels_and_parents():

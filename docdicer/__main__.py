@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""docdicer: split markdown documents by heading into trees of small linked files (see README.md).
+"""docdicer: dice large markdown documents into trees of small linked files, and check and view development plans as a board (see README.md).
 
 Exit status: 0 on success, 1 when a check or step fails, 2 on bad arguments.
 """
@@ -16,6 +16,8 @@ from .dicerlib.manifest import dice_docs
 from .dicerlib.refactor import list_runins, refactor
 from .dicerlib.textfile import read_lines
 from .dicerlib.treecheck import check_trees
+from .kanban.plancheck import check_plan
+from .kanban.server import run_kanban
 
 
 def _keep_list() -> list[str]:
@@ -72,6 +74,22 @@ def _parser() -> argparse.ArgumentParser:
         "check-tree", help="check every document of a diced tree is linked from its parent and reachable"
     )
     p.add_argument("roots", nargs="+", metavar="root", help="a diced tree's directory, holding its entry-point.md")
+
+    p = commands.add_parser("check-plan", help="check a plan's status form, as the board reads it")
+    p.add_argument(
+        "plan",
+        nargs="?",
+        help="the plan, or a diced plan's entry-point.md; default the active plan of the project the current"
+        " directory is in",
+    )
+
+    p = commands.add_parser("kanban", help="serve a live board of a project's roadmap, design and plan on 127.0.0.1")
+    p.add_argument(
+        "project_dir",
+        nargs="?",
+        metavar="project-dir",
+        help="a directory inside the project; default the current directory",
+    )
     return parser
 
 
@@ -109,6 +127,16 @@ def main(argv: Optional[list[str]] = None) -> int:
         if _refuse_unreadable(args.roots, err=err):
             return 2
         return 0 if check_trees(args.roots, out=out, err=err) else 1
+    if args.command == "check-plan":
+        if args.plan is not None and not os.path.isfile(args.plan):
+            parser.error(
+                f"no such plan file: {args.plan} (name a plan's markdown file, or a diced plan's entry-point.md)"
+            )
+        return check_plan(args.plan, start=os.getcwd(), stdout=out, stderr=err)
+    if args.command == "kanban":
+        if args.project_dir is not None and not os.path.isdir(args.project_dir):
+            parser.error(f"no such directory: {args.project_dir}")
+        return run_kanban(args.project_dir, start=os.getcwd(), stdout=out, stderr=err)
     try:
         lines = read_lines(args.doc)
     except OSError:

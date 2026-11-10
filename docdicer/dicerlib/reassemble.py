@@ -3,6 +3,7 @@ links reverted, reproduce the monolith line for line (outside links compared in 
 
 from typing import TextIO
 
+from .heads import CONTENTS
 from .linkrewrite import Linker, Tree, parent_dir
 from .outline import Outline, Section
 from .textfile import FenceTracker, fence_flags, read_lines
@@ -11,7 +12,7 @@ from .textfile import FenceTracker, fence_flags, read_lines
 def contents_cut(lines: list[str]) -> int:
     """Index of a head's Contents block: its last line that is exactly `Contents:`; -1 if none."""
     cut = len(lines) - 1
-    while cut >= 0 and lines[cut] != "Contents:":
+    while cut >= 0 and lines[cut] != CONTENTS:
         cut -= 1
     return cut
 

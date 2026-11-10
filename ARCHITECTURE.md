@@ -9,22 +9,30 @@ Python ≥ 3.9, standard library only; packaging is in `pyproject.toml`.
 | Target | Effect |
 |---|---|
 | `just test` | creates `.venv` if absent, then runs pytest over `docdicer/` with the project root on `PYTHONPATH` |
-| `just build` | builds the wheel into `dist/` |
+| `just build` | builds the wheel into `dist/`; the wheel carries `docdicer/kanban/assets/` (the board's page) as package data, declared in `pyproject.toml` |
 | `just format` | black, isort, flake8 over `docdicer` |
 | `just tag` | with tracked files committed, creates and verifies a signed annotated tag `v<version>` from `docdicer --version`; needs a signing key, pushes nothing |
+| `just agents` | installs the pinned adjagent into `.venv` unless that version is already there, then runs `adjagent install .` for the `claude` and `opencode` harnesses |
 
 ## §2 Package map
 
-`__init__` (`__version__`) and `__main__` are in `docdicer/`; every other module is in `docdicer/dicerlib/`. Tests: `docdicer/test/test_dicer.py`, cases in `docdicer/test/data/<case>/`, and the per-module unit test files beside it (§8).
+Only `__init__` (`__version__`) and `__main__` sit at the package's top level, in `docdicer/`; every other module is in a subpackage: `docdicer/dicerlib/` for dicing and its checks, `docdicer/kanban/` for the plan reader, `check-plan`, the board and its server. Tests: `docdicer/test/test_dicer.py`, cases in `docdicer/test/data/<case>/`, and the per-module unit test files beside it (§8).
+
+**`docdicer/`**
 
 | Module | Responsibility |
 |---|---|
-| `__main__` | Builds the argparse parser, reconfigures stdout and stderr to UTF-8 with `surrogateescape`, reads `DICER_KEEP`, validates root arguments and refuses unreadable files (exit 2), calls one driver, and turns its result into the exit status. The only code that reads environment variables or `sys.argv`. |
-| `heads` | `ENTRY_POINT`, `INDEX`, `HEADS` (SPEC §3.2). |
-| `textfile` | File I/O (UTF-8, `surrogateescape`, `newline=""`); `\n`-only line splitting (`split_lines`, `terminated_lines`, `join_lines`); `is_blank`; `FenceTracker` / `fence_flags` (SPEC §3.1). |
-| `outline` | `plan_sections` turns lines into `Section` records (SPEC §3.1, §3.2); `Outline` gives lookups by number, children, depth and Contents link text. |
+| `__main__` | Builds the argparse parser, reconfigures stdout and stderr to UTF-8 with `surrogateescape`, reads `DICER_KEEP`, validates root arguments and refuses unreadable files (exit 2), calls one driver, and turns its result into the exit status. The only code that reads environment variables, `sys.argv` or the working directory: `check_plan` and `run_kanban` are given `os.getcwd()` as their `start`. |
+
+**`docdicer/dicerlib/`**
+
+| Module | Responsibility |
+|---|---|
+| `heads` | `ENTRY_POINT`, `INDEX`, `HEADS` (SPEC §3.2) and `CONTENTS`, the one spelling of the `Contents:` line. |
+| `textfile` | File I/O (UTF-8, `surrogateescape`, `newline=""`); `replace_lines`, the whole-or-nothing write (§6); `\n`-only line splitting (`split_lines`, `terminated_lines`, `join_lines`); `is_blank`; `FenceTracker` / `fence_flags` (SPEC §3.1). |
+| `outline` | `plan_sections` turns lines into `Section` records (SPEC §3.1, §3.2); `section_name`, the §3.2 file name of a heading, which `plan_sections` and the board's diced moves both use; `Outline` gives lookups by number, children, depth and Contents link text. |
 | `refactor` | The bold-line classifier and converter (SPEC §9.1), the `list` rows (SPEC §9.2), and the `check_hunks` self-check. |
-| `linkrewrite` | The single link/reference scanner `_scan`, the `Linker` built on it (forward rewriting and its inverse, `restore`), the `LinkMap` and `Tree` records, and the path helpers `rel` and `parent_dir` (SPEC §4, §5, §6.1). |
+| `linkrewrite` | The single link/reference scanner `scan`, with `never_rebased` (the targets that mean the same from anywhere), the `Linker` built on it (forward rewriting and its inverse, `restore`), the `LinkMap` and `Tree` records, and the path helpers `rel` and `parent_dir` (SPEC §4, §5, §6.1). |
 | `split` | The write pass: each section's lines through `Linker.forward`, plus `contents_block` (SPEC §3.3), written under the output directory; prints the `refs linked` line. |
 | `reassemble` | The inverse of the write pass (SPEC §8.1). |
 | `linkcheck` | `check_links` (SPEC §8.2), `check_markdown_links` (SPEC §8.4), the GitHub anchor functions (SPEC §4.4), `prose_links`, `markdown_files`. |
@@ -32,9 +40,20 @@ Python ≥ 3.9, standard library only; packaging is in `pyproject.toml`.
 | `dicedoc` | `dice_doc` (SPEC §6), `undice` (SPEC §6.1) and `verify` (SPEC §8.3); each reports duplicate section numbers once, after planning. |
 | `manifest` | `dice_docs` (SPEC §7): manifest reading, refactor calls, link-map rows, group indexes, the entry point, the written-files check. |
 
+**`docdicer/kanban/`**
+
+| Module | Responsibility |
+|---|---|
+| `planform` | The plan-form reader, the form SPEC §8.6 defines: `read_plan` returns a `Plan` and every `Breach` of the form it meets, sorted by the file's place in the reading order, then line. Also the project's fixed file names (`ACTIVE_DESIGN`, `ACTIVE_PLAN`, `PARKED_PLANS`, `ROADMAP`) and where they are found: `find_project_root` (nearest ancestor holding `.git`, by `os.path.lexists`, never by running git), `active_document`, `parked_entries`. Also the readings `board` shares: `plan_files` (the files of a document, §5 `check-plan`), `file_headings`, the `HEADING` pattern (a `#` run of 1 to 6 and a space), and `h1_line`, `planform`'s own reading of a document's H1 (outside fenced code), which `board` does not share. |
+| `plancheck` | `check_plan` (SPEC §8.6): the `check-plan` driver over `planform`. Owns the breach message lines (problem text and the `found` rendering), the summary, the default plan (project root, then monolith before tree) and the driver's exit statuses, 2 for a missing project root or an unreadable plan file. |
+| `board` | Over `planform` and `ROADMAP.md`. `read_board` returns the `Board`: roadmap cards from the top-level list items, the parked entries no item links, the design card, the plan's packages. `watched_files` names every file the board reads, or would read were it there. `move_to_design` and `move_to_roadmap` are the board's only writes to documents, the moves of an entry between `ROADMAP.md` and the active design (§6); a refused move raises `MoveRefused`, a failed write `MoveWriteFailed`. `sha256` is the one digest of a file's text, used for `Board.sha256` and by `server` for its change detection; `root_relative` is the one spelling of a path relative to the root, `/`-separated. Reads the design and plan files through `planform`'s `plan_files` and `file_headings`. Serves nothing, keeps no UI state, reads no git. |
+| `server` | The board served: `KanbanServer` (a `ThreadingHTTPServer` on `127.0.0.1`, one project's board and the poll thread that keeps it current), its request handler and `run_kanban`, the `kanban` driver (§5). `CannotListen` is the constructor's report of a port that cannot be bound. Reads the page from `assets/`. Keeps no UI state and writes no file of its own; the documents it writes are `board`'s moves. |
+
 ## §3 Dependency direction
 
-A module imports only from lower layers.
+Within a subpackage, a module imports only from lower layers. `kanban` imports from `dicerlib`; `dicerlib` never imports from `kanban`. `__main__` imports from both.
+
+`dicerlib`:
 
 | Layer | Modules |
 |---|---|
@@ -44,7 +63,16 @@ A module imports only from lower layers.
 | 3 | `split`, `reassemble`, `linkcheck` |
 | 4 | `treecheck`, `dicedoc` |
 | 5 | `manifest` |
-| 6 | `__main__` |
+
+`kanban`:
+
+| Layer | Modules |
+|---|---|
+| 0 | `planform` |
+| 1 | `plancheck`, `board` |
+| 2 | `server` |
+
+`__main__` is above both.
 
 Exception: `linkrewrite._anchor_homes` imports `linkcheck.heading_anchor_list` inside the function, because `linkcheck` imports `linkrewrite`.
 
@@ -59,6 +87,19 @@ Exception: `linkrewrite._anchor_homes` imports `linkcheck.heading_anchor_list` i
 | `Linker` | `linkrewrite` | Holds `Outline`, `Tree`, the anchor-home table and its inverse, and the `resolved` / `dangling` counters. Methods `forward`, `rebase_only`, `revert`, `restore`. |
 | `Anchor` | `linkcheck` | `base` and repeat-suffixed `name` of one heading. |
 | `_Volume`, `_Entry` | `manifest` | One diced manifest row (the document actually diced, its output directory, label, `file` key); the `entry` row. |
+| `Plan` | `kanban.planform` | One plan: `title` (its H1), `release` (the text after `Release:`, `None` where unnamed), `hardening` (the H1 opens `Release hardening`), `packages`, `breaches`. |
+| `PlanFile` | `kanban.planform` | One file of a plan or design: `path`, `lines` and `fenced` (per line, inside fenced code). |
+| `Heading` | `kanban.planform` | A heading outside fenced code: `path`, `line` (1-based), `level`, `text`. |
+| `WorkPackage` | `kanban.planform` | One status-table row with a non-empty `Package` cell (SPEC §8.6): `id`, `title` (`""` where no heading opens with the ID; a heading that only mentions it gives none and no breach), `state` (`DRAFTED` or one of `STATE_WORDS`), `note`, `lifetime` (`None` without a `Lifetime` column), `rating` (one of `RATING_WORDS`, else `None`) and `rating_note` (the Rating cell after its word, the whole cell where it has none), and the `path` and `line` of its row. |
+| `Breach` | `kanban.planform` | One fault of the form: `kind`, `path`, `line` (1-based, per file), `found` (the text as the plan holds it, except for a repeated ID: the ID and the line of the row that first holds it) and `accepted` (the form accepted there). |
+| `BreachKind` | `kanban.planform` | One kind per breach row of SPEC §8.6: `ID_REPEATED`, `ID_SPACE`, `STATE_WORD`, `RELEASE_MISPLACED`, `RELEASE_EMPTY`, `RATING_MISSING`, `RATING_WORD`, `REVIEW_UNPAIRED`, `BURNDOWN_UNPAIRED`. |
+| `Board` | `kanban.board` | One read of a project (cards per SPEC §11.2): `release`, `hardening`, `roadmap` (`RoadmapCard`s), `parked` (`ParkedCard`s), `design` (`DesignCard`s), `packages` (the plan's `WorkPackage`s; `PLAN_COLUMNS` names the plan columns, a package sitting in the one its `state` names) and `sha256`: the digest (`sha256`) of `ROADMAP.md` and of each design file, keyed by path relative to the root, `None` for a file that is absent (`ACTIVE_DESIGN.md` is the key where there is no design). It is the state a move's hash check compares. |
+| `RoadmapCard` | `kanban.board` | A top-level `ROADMAP.md` list item (SPEC §11.2): `title`, `group`, `text` (its lines as written) and `parked` (the parked entries its links name, relative to the project root). The title is cut at `TITLE_LENGTH`; each link outside code spans is first reduced to its text by `_link_texts`, a `linkrewrite.scan` with a link-text callback, so the sentence end and the cut are found on the reduced text. |
+| `ParkedCard` | `kanban.board` | A parked entry no roadmap item links: `title` and `path` relative to the project root. |
+| `DesignCard` | `kanban.board` | One `##` section of the active design: `title` (the heading), `text` (the lines below it, blank lines at either end dropped, newline-joined), `path` (the file holding it, relative to the root) and `parked` (the parked entry's path where the section is that entry's link section, else `None`). |
+| `MoveRefused` | `kanban.board` | Raised by `move_to_design` and `move_to_roadmap`, writing nothing; its message says why. |
+| `MoveWriteFailed` | `kanban.board` | Raised where a write or deletion fails at the file system: `path` is the file, `written` the files written before it; the message is `cannot write: <path>`. |
+| `CannotListen` | `kanban.server` | Raised by the `KanbanServer` constructor where the port cannot be bound; the message is the reason. |
 | `_Hunk` | `refactor` | A merged changed region: start line, old lines, new lines. |
 
 ## §5 Data flow per command
@@ -89,11 +130,51 @@ The map is written before dicing because volumes link to each other. Dicing ther
 
 Both walk files with `markdown_files` and read links with `prose_links` (§6). `check_trees` maps each file to the real paths it links to, checks that each file's parent links to it, then walks breadth-first from the root's entry point.
 
+### `check-plan` (SPEC §8.6)
+
+`__main__` refuses a named plan that is not a file with `parser.error` (exit 2), then calls `check_plan(plan, start=os.getcwd(), ...)`. Without a plan, `check_plan` takes `find_project_root(start)` (a missing root returns 2 with the remedy on stderr) and `active_document(root, ACTIVE_PLAN)`, which prefers the monolith to the tree; none found prints `no active plan in <root>` to stdout and returns 0. `read_plan` reads the plan; an `OSError` from any of its files, a diced plan's leaves included, is reported as `cannot read: <file>` (the error's own file, else the plan given) and returns 2, the first failure ending the read.
+
+`plan_files` gives the reading order: a monolith alone; for an `entry-point.md`, the entry point first, then the other `.md` files beneath its directory in `markdown_files` order: `os.walk` top-down with names sorted, so a directory's own files come before its subdirectories' and each level is in name order. `read_plan` sorts its breaches by (the file's place in that order, line), those on one line keeping the order found.
+
+Otherwise `check_plan` prints one stderr line per `Breach` in `Plan.breaches`, built from its `path`, `line`, `found` and `accepted` with a per-`BreachKind` problem text, then the stdout summary, and returns 1 when there are breaches. `found` is rendered by `plancheck._found` per SPEC §8.6: `found an empty cell` for an empty text, else the text in a code span fenced by one backtick more than its longest run. A heading that fails to open with its row's ID is no `Breach`: `read_plan` gives the package an empty title (SPEC §8.6). `read_plan` reads the titles for the post-plan pairing: after `_packages` and before the sort, `_unpaired_post_plan` runs over the finished `WorkPackage` list and gives a `REVIEW_UNPAIRED` or `BURNDOWN_UNPAIRED` `Breach`, at the package's row, to each post-plan review package where no package's title opens with `Post-plan burndown`, and each burndown package where none opens with `Post-plan review`. `_title_opens_with(title, prefix)` applies SPEC §8.6 Terms' rule for when a title opens with a post-plan prefix. An untitled package opens with neither.
+
+### `kanban` (SPEC §11)
+
+`__main__` refuses a `project-dir` that is not a directory with `parser.error` (exit 2), then calls `run_kanban(project_dir, start=os.getcwd(), ...)`; a relative `project_dir` is taken from `start`. `run_kanban` finds the project root (none: the SPEC §11 message on stderr, 2) and builds `KanbanServer`. The constructor creates its stop event and poll thread (not started), takes a snapshot of the watched files, reads the board, binds an ephemeral port on `127.0.0.1` and starts the poll thread, a daemon. An `OSError` out of the reads is printed as `cannot read: <file>` and returns 2 before any URL is printed; an `OSError` from the bind is re-raised as `CannotListen` and printed as `cannot listen: <reason>` with the same status. Otherwise `run_kanban` prints the URL and calls `serve_forever`; a `KeyboardInterrupt` ends it, `server_close` stops the poll thread, and the status is 0. Each request runs in its own daemon thread.
+
+The **snapshot** maps each file of `board.watched_files` to the SHA-256 (the function `board.sha256`) of its content, `None` where it is not a file, and `"unreadable"` where it is one that cannot be read. `watched_files` names `ROADMAP.md`, `ACTIVE_DESIGN.md`, `ACTIVE_DESIGN/entry-point.md`, `ACTIVE_PLAN.md`, every `.md` beneath `ACTIVE_DESIGN/` and `ACTIVE_PLAN/` that exists (a diced design's leaves and a diced plan's) and the parked entries; the files the board would read were they there are listed so that their creation changes the snapshot. The poll thread, every `POLL_SECONDS` (0.25 s, which satisfies SPEC §11.5's second) and holding the server's lock, takes a new snapshot; where it differs from the held one, the thread calls `read_board` and only when that returns keeps the snapshot, increments the board's **version** (starting at 1) and wakes every waiting request. An `OSError` from `read_board` keeps the last good board and the last snapshot, so the next poll reads again and the change is adopted without a further edit; it is named once on stderr as `cannot read: <file>` (the error's own file, else the root), and the next successful refresh lets the name be reported again.
+
+**Endpoints.** Each answers JSON but the page's files; every `POST` takes an `application/json` object and answers the board payload as it stands after it:
+
+| Request | Body | Effect |
+|---|---|---|
+| `GET /`, `GET /<file>` | | `index.html`, or the named `.html`, `.js` or `.css` file of `assets/`; its 404 too carries the page's `Content-Security-Policy` |
+| `GET /api/board[?since=<version>]` | | the payload; with `since` equal to the held version, the answer waits for a change, or for `LONG_POLL_SECONDS` (25) to pass, or for the server to close |
+| `POST /api/to-design` | `{"card"}` | `card` as the payload served it. `move_to_design` matches it, field for field, against its own fresh read of the files (§6), else `MoveRefused`; it moves against the held `board.sha256`. Then a refresh, the payload with `written` |
+| `POST /api/to-roadmap` | `{"card", "target"}` | `card` as served. `target` is the roadmap or parked card the drop landed on, as served, or null; it must be a dict or null (else 400). `move_to_roadmap` matches `card` against a design card of its fresh read, else `MoveRefused`, and reads a `target` equal to no roadmap card of that read as null; it moves against the held `board.sha256`. Then a refresh, the payload with `written` |
+
+The payload is `{"version", "board" (the `Board` as a dict), "plan_columns" (`PLAN_COLUMNS`, in order)}`; the two move answers add `"written"`, the files written relative to the root in the order written. A move runs under the server's lock and then refreshes the board, as a failed write does too, since the files written have changed. A refresh that raises `OSError` after a move is named on stderr and does not replace the move's result: the answer keeps `written`. Status codes: 200; 400 for a body that is not a JSON object, a field of the wrong type, or a negative or non-numeric `Content-Length`; 403 for the Host check; 404 for an unknown path or file; 409 for `MoveRefused`, body `{"error": <message>}`; 415 for a non-JSON content type; 500 for `MoveWriteFailed`, body `{"error": "cannot write: <file>", "written": [...]}`, and for an `OSError` from a read the move makes, body `{"error": "cannot read: <file>"}` (relative to the root; the error's own file, else the root).
+
+**Headers.** Every response carries `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`; the answers to `GET /` and `GET /<file>` also carry `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'`.
+
+**The Host check** runs first on every request: the `Host` header must be `127.0.0.1:<port>` or `localhost:<port>`, the server's own port; a missing or other value is refused. This is the defence against a page on another origin that rebinds its DNS name to `127.0.0.1`.
+
+**The page** (`assets/index.html`, `board.css`, `board.js`) draws a column for Roadmap, one for Design, then one per entry of `plan_columns`, and keeps no state beyond the version it last drew, the payload deferred during a drag, the drag under way and whether the server is answering.
+
+- **Drawing.** `render` draws a payload unless its version is the one drawn (a long poll that times out answers the same version), keeping each column's scroll position across a real redraw; a payload that arrives during a drag is held until the drag ends. A poll that fails forgets the drawn version, since a restarted server counts from 1 again. An error inside `render` is shown in the alert as `board not drawn: <message>` and polling continues. A design card that is not a link section shows its section text: the lines joined into paragraphs at blank lines, each rendered by the §7 set of inline forms (code spans, links shown as their text, `**strong**`, `*emphasis*`). It is built from text nodes and `<code>`, `<strong>` and `<em>` elements only; file text never reaches the page as markup.
+- **Messages.** `#notice` (`role="status"`) carries a move's success, naming the files written; `#alert` (`role="alert"`) carries failures. Only a 409 opens `Not moved: `; a 500 names the files already written.
+- **Drops.** Only roadmap, parked and design cards are draggable, and only Roadmap and Design accept a drop (a roadmap or parked card on Design, a design card on Roadmap); on any other column `dragover` is left uncancelled, so the browser refuses the drop. With no card being dragged, `document`-level listeners cancel `dragover` and `drop` with `dropEffect = "none"`, so a file dropped anywhere does not replace the page. A work package's card is not draggable: its state changes by an edit to the plan, which the poll shows.
+- **Server stopped.** After `STOPPED_AFTER` (3) consecutive failed polls the connection indicator reads `server stopped: restart docdicer kanban and open the URL it prints` and no drag starts; polling continues, and a successful poll restores `live` and drags.
+
+The plan columns are drawn as outlined boxes holding flat cards, while Roadmap and Design are filled columns of raised cards (a small shadow) with the grab cursor. The difference is in form (outline against fill, flat against raised), so it does not depend on colour.
+
+Each column's label, an `h2` and nothing else, sits in a `div.column-head` band above the scrolling `.cards`. The band is outside the list, so it stays in place while the cards scroll, and it adds no control. A full-width `2px solid var(--line)` bottom rule separates it: one side only, a shape no card has, so the separation does not depend on colour either.
+
 ## §6 Mechanisms
 
 ### Link scanning is shared
 
-`linkrewrite._scan` is the only scanner of a line. It skips code spans, finds `[text](target)` per SPEC §4.1, and, given an `on_ref` callback, finds `§N` references. Callers differ by callback:
+`linkrewrite.scan` is the only scanner of a line. It skips code spans, finds `[text](target)` per SPEC §4.1, and, given an `on_ref` callback, finds `§N` references. Callers differ by callback:
 
 | Caller | Callbacks | Used by |
 |---|---|---|
@@ -102,6 +183,8 @@ Both walk files with `markdown_files` and read links with `prose_links` (§6). `
 | `Linker.revert` | un-linker | reassembly (actual side) |
 | `Linker.restore` | un-linker, anchor restorer, un-rebaser | `undice` |
 | `link_targets` | collector | `prose_links`, `undice`'s read of Contents blocks |
+| `board._link_texts` | link-text reducer | roadmap card titles |
+| `board._rebased` | rebaser | the board's moves (§6) |
 
 `restore` tries, in order: `revert`'s test for a section link; the inverted anchor-home table, keyed by the target resolved to a tree-root path and its fragment; `_unrebase`, the lexical inverse of `_rebase`'s `rel`. `revert` recognises a link as forward-made when its text starts with `§<digit>`, names a known number (and child name if present), and its target equals the path `forward` would compute; any other link is left as is.
 
@@ -115,7 +198,7 @@ Both walk files with `markdown_files` and read links with `prose_links` (§6). `
 
 ### Contents blocks and the cut
 
-`contents_block` is appended last, so `check_reassembly` cuts at the last line equal to `Contents:`. This drops lines appended after it (group lines) and ignores any earlier `Contents:` line from the source.
+`contents_block` is appended last, so `check_reassembly` cuts at the last line equal to `heads.CONTENTS` (`reassemble.contents_cut`, which the board's reads and splices also use). This drops lines appended after it (group lines) and ignores any earlier `Contents:` line from the source.
 
 ### Planning
 
@@ -125,15 +208,48 @@ Both walk files with `markdown_files` and read links with `prose_links` (§6). `
 
 `check_hunks` diffs `terminated_lines` of input and output with `difflib.SequenceMatcher(autojunk=False)`, merges changed regions separated by up to three blank unchanged lines, and compares each merged hunk's new side with `_expected(old)`, which derives the conversion separately from `_walk` / `_classify`, sharing only the `_BOLD_ITEM` / `_BOLD_RUNIN` patterns. A divergence between the two derivations is reported as `BAD`.
 
+### The board's moves
+
+`move_to_design(root, card, read=...)` and `move_to_roadmap(root, card, target=..., read=...)` are the same procedure in two directions. `read` is the `Board.sha256` the server holds. Each returns the files written, relative to the root, in the order written.
+
+1. **One private read.** `_read(root)` reads the roadmap and the design files afresh into lines (not the server's board) and finds the card in them: a roadmap item, a parked card, or a design section, by equality with the card given (`asdict` of the fresh card against the dict served; no other check of the card exists). Absent, the move raises `MoveRefused` (`the card is no longer on the board`). The read never touches the active plan. An `OSError` from it propagates, and the server answers it as `cannot read:`.
+2. **Section ranges.** A design file's sections come from `planform.file_headings`, outside fenced code. A `##` heading starts a section that ends before the next heading of level 1 or 2, or at the end of the file. In a head file (`entry-point.md`, `index.md`) it also ends at the file's last `Contents:` line (`contents_cut`), and a `##` heading below that line is no section. A diced design's files are in `plan_files` order (§5 `check-plan`): the entry point, then a directory's files before its subdirectories'. A section is a link section where its heading is the unlinked parked entry's name, written `## <name>`, and its body equals the link body for that file's directory (below). A roadmap item's range is `_items`' first to last non-blank line.
+3. **In-memory splices.** The move builds each changed file's new lines by splicing the lines it read; nothing is written yet. A file is `(path, lines)` or `(path, None)` for a deletion. The list is in write order, the addition first.
+4. **Hash re-check.** `_write` reads each file of the list again and compares its digest, or its absence, with `read`, where a file the board did not read, or found absent, counts as `None`: the new leaf and an absent `ROADMAP.md` must still be absent. A difference raises `MoveRefused` (`<file> changed since the board read it`) and nothing is written. The check completes for every file before the first write, and the check and the writes are not atomic.
+5. **Whole-file writes** in list order, `textfile.replace_lines` for a file, `os.remove` for a deletion. `replace_lines` resolves a symbolic link and writes through it; writes a temporary file beside the target, named `<target>.<pid>.tmp` so that no reader of a directory's `.md` files sees it; copies an existing file's permission bits onto it; and renames it over the target, so a failed write leaves the old file whole and the temporary file removed. A failure raises `MoveWriteFailed` with the files already written; the addition having come first, a failure partway leaves the entry in both documents and never in neither.
+
+**Roadmap to design.** The section is `## <title>`, a blank line, then the body. A roadmap item's body is its lines with the list marker removed from the first, links rebased; a parked card's is the link body: `[<path>](<link>)`, a blank line, and `INSTRUCTION` (`complete and update this design`), the link being the entry's path relative to the file's directory (`linkrewrite.rel`).
+
+| Design | Writes, in order |
+|---|---|
+| none | `ACTIVE_DESIGN.md` created as `CREATED_DESIGN_HEADING` (`# ACTIVE DESIGN`, never the card's title), a blank line, the section |
+| monolith | the file with the section appended, a blank line between unless its last line is blank |
+| diced | the section as a new leaf `<name>.md` beside `entry-point.md`, `name` being `outline.section_name(title)`; then `entry-point.md` with `- [<title>](<name>.md)` after the last item of the list under its last `Contents:` line, or a `Contents:` block at its end where it has none |
+| (a roadmap item) | then `ROADMAP.md` without the item's lines; a parked card leaves it unwritten |
+
+A diced design refuses, each with its own message, where `section_name` returns `""` and where the leaf exists (`os.path.lexists`).
+
+**Design to roadmap.** A link section adds nothing to `ROADMAP.md`. Any other section returns as an item, the first write, in `ROADMAP.md` (created where absent) at the end of its `##` group's items (`_roadmap_with`), the group being that of `target` where it is a roadmap card, else the file's last, with the marker of that group's items (a numbered group's next number, `- ` where it has none). The body is the section's lines below its heading, trimmed, links rebased. `_returned_item` returns it as the item it was where both hold: `_roadmap_title` of the marker and first body line (links reduced to their text, as for a card's title) gives the heading, and `_items` over the marker and body reads back one item whose last line is the body's last line (SPEC §11.3); otherwise the heading is the item's bold lead, the first body line follows it and later lines are indented under the marker. At the file's end the item goes after the last item of the final group when only blank lines follow it, else after a separator at the end. The section is then removed, in one of two ways:
+
+- *a leaf beside `entry-point.md` holding exactly the section*: a non-head file in the entry point's directory, blank above the heading, the section running to its last line. The Contents line linking it (the first line below the last `Contents:` with a link target that normalizes to the leaf's name) is removed from `entry-point.md`, then the leaf is deleted, so a failure between leaves a leaf nothing links, not a link to nothing. Where no such line is found (`_without_contents_line` returns `None`: no Contents block, or no line of it links the leaf), the move is refused before anything is written.
+- *otherwise*: the section's lines are removed from the file holding it, and a blank line left last when the section ended the file is dropped. A section in `entry-point.md`, or a leaf with more than the section, is removed this way, with no leaf deleted and no Contents line removed.
+
+**Links.** Rebasing uses `linkrewrite.scan` and `never_rebased` (the targets that mean the same from anywhere: empty, `#...`, `/...`, URLs), skipping fenced code and code spans and keeping any fragment. Each relative target is resolved from the source file's directory and rewritten with `rel` from the destination's; the roadmap sits at the root and a monolith design beside it needs none. The result of `rel` is a normal form, so a rebase out and back is the identity on a target already in it.
+
+**A round trip** is byte-identical on the conditions of SPEC §11.3; where the mechanism decides them: `replace_lines` ends each line with a newline, so a file with none gains it; the item returns after the last item of the group dropped on (`_roadmap_with`), so a blank line between them, or a different group, returns it elsewhere; and a design file's trailing blank line is not restored. In a diced design the line added at the list's end is the one removed, but a Contents block the move had to add stays, and an empty list keeps a blank line. The reverse trip (design, roadmap, design) puts a leaf's Contents line at the end of the list, not where it was. A parked entry's round trip writes only the design: the link section is added, then removed.
+
 ## §7 Invariants
 
+- A document is a list of lines; structure is line ranges over it (sections, items, tables), and every transform is a splice of lines. No markdown parser or syntax tree: a feature that needs one is past this tool's scope. The board page (`board.js`) holds to the same line: it renders a small fixed set of inline forms (code spans, links shown as their text, `**strong**` and `*emphasis*`) and joins a section's lines into paragraphs at blank lines; any other markdown shows as written, and rendering more is past the tool's scope.
 - Head-file names are spelled only in `heads.py`; every other module imports them.
-- Fenced code is defined only by `FenceTracker`; `outline`, `split`, `reassemble`, `linkcheck`, `refactor` and `dicedoc` use it.
-- Only `textfile` opens files for text; passes use its readers and writers.
+- Fenced code is defined only by `FenceTracker`; `outline`, `split`, `reassemble`, `linkcheck`, `refactor`, `dicedoc`, `kanban.planform` and `kanban.board` (through `fence_flags`) use it.
+- Only `textfile` opens files for text; passes use its readers and writers. One exception: `kanban.server` reads the page's files from the package's `assets/` through `importlib.resources`, `Traversable.read_text`, because a packaged resource, which may sit in a zip, has no path to give `textfile`.
 - Passes are functions of their arguments and write only to the `out` / `err` streams they are given (drivers take `stdout` / `stderr`). Nothing below `__main__` touches `sys.stdout`, which is what lets `manifest` capture a volume's output in a `StringIO`. Drivers own filesystem layout and exit statuses.
 - `Section` lists are in document order with `id == index`; `sections[0]` is always the entry point.
 - Sections' `first`..`last` ranges partition `1..len(lines)`.
-- The file-name slug (`outline.slug`) and the heading anchor (`linkcheck.github_anchor`) are separate functions and never substituted for each other.
+- The file-name slug (`slug`, in `outline`; `section_name` builds the §3.2 name from it) and the heading anchor (`linkcheck.github_anchor`) are separate functions and never substituted for each other.
+- The code spells the `Contents:` line as `heads.CONTENTS` and locates a head's Contents block with `reassemble.contents_cut`; no test enforces this.
+- The board writes a document with `textfile.replace_lines`, whole or not at all, and otherwise changes one only by `os.remove` of a leaf; no test enforces this.
 
 ## §8 Test harness
 
@@ -155,11 +271,12 @@ The harness copies `input/` into the test's pytest `tmp_path`, which `just test`
 
 `test_undice_then_dice_reproduces_the_tree` is parametrized over every case whose args are `dice-doc` with no map and whose expected exit is 0; each copies its `expected/tree/` into its `tmp_path`, runs `undice <out> mono.md`, renames `<out>` aside, runs `dice-doc mono.md <out>`, and requires both runs to exit 0 and the two trees' file maps equal (SPEC §6.1). `test_round_trip_cases_exist` requires at least one case to qualify. Both runs go through the same subprocess call as the golden cases.
 
-The per-module unit tests call the owning functions directly: `test_textfile.py`, `test_outline.py`, `test_split.py`, `test_linkcheck.py`, `test_reassemble.py`, `test_linkrewrite.py`, `test_undice.py`, `test_refactor.py`, `test_treecheck.py`.
+The per-module unit tests call the owning functions directly: `test_textfile.py`, `test_outline.py`, `test_split.py`, `test_linkcheck.py`, `test_reassemble.py`, `test_linkrewrite.py`, `test_undice.py`, `test_refactor.py`, `test_treecheck.py`, `test_planform.py`, `test_plancheck.py`, `test_board.py`, `test_server.py`. `test_server.py` starts `KanbanServer` on an ephemeral port in a thread against a `tmp_path` project holding `.git` and drives it over HTTP; it also calls `run_kanban` directly. Its one subprocess test, `test_the_command_prints_the_url_and_serves_until_interrupted`, runs `python -m docdicer kanban`, reads the URL line, fetches the page, sends SIGINT, and requires exit 0 and nothing further on either stream. `test_plancheck.py` covers the default plan and the project-root exit, which no golden case can (a golden case's `tmp_path` sits inside this repository's `.git`); the `check-plan-*` golden cases name `<plan>`. The driver tests pass the directory as `start` rather than changing directory; the two no-project-root tests also patch `os.path.lexists`, since the test directory sits inside this repository's `.git`.
 
 ## §9 Extension points
 
 - *A new command*: add a parser in `__main__._parser`, a driver in the layer that owns its inputs, and a golden case; exit statuses follow SPEC §2.
-- *A new link form*: change `_scan` and `Linker` only (§6).
+- *A new link form*: change `scan` and `Linker` only (§6).
 - *A new split level*: `outline._DEEPEST_SPLIT_LEVEL`; the heading-width test in `plan_sections` bounds what is a heading at all.
+- *A new plan-form breach*: a `BreachKind` and its detection in `kanban.planform.read_plan`, and its problem text in `kanban.plancheck._PROBLEMS`; the reader's callers receive it through `Plan.breaches`.
 - *Head-file names*: fixed, not an extension point.

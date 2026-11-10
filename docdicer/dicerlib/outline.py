@@ -41,6 +41,14 @@ def split_number(text: str) -> tuple[str, str]:
     return m.group()[:-1].removesuffix("."), text[m.end() :]
 
 
+def section_name(text: str) -> str:
+    """The file name, without `.md`, of a section headed text: `<number>-<slug>`, `<number>` where
+    the slug is empty, `<slug>` where unnumbered; "" for an unnumbered heading with an empty slug."""
+    number, title = split_number(text)
+    name_slug = slug(title)
+    return f"{number}-{name_slug}" if number and name_slug else number + name_slug
+
+
 def plan_sections(lines: list[str], *, err: TextIO) -> tuple[list[Section], bool]:
     """The sections of a monolith, entry point first, and whether planning succeeded.
 
@@ -80,12 +88,11 @@ def plan_sections(lines: list[str], *, err: TextIO) -> tuple[list[Section], bool
     path_line: dict[str, int] = {}
     ok = True
     for i, (level, no, text) in enumerate(headings, 1):
-        number, title = split_number(text)
-        name_slug = slug(title)
-        if not name_slug and not number:
+        name = section_name(text)
+        if not name:
             print(f"empty slug for heading at line {no}", file=err)
             return sections, False
-        name = f"{number}-{name_slug}" if number and name_slug else number + name_slug
+        number, title = split_number(text)
         parent = parents[i - 1]
         dirs[i] = f"{dirs[parent]}/{name}" if parent else name
         path = f"{dirs[i]}/{INDEX}" if i in has_children else f"{dirs[i]}.md"

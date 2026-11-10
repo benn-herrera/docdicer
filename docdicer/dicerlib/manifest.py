@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import Optional, TextIO
 
 from .dicedoc import dice_doc, verify
-from .heads import ENTRY_POINT, INDEX
+from .heads import CONTENTS, ENTRY_POINT, INDEX
 from .outline import plan_sections
 from .refactor import refactor
 from .textfile import append_text, read_lines, read_text, terminated_lines, write_lines, write_text
@@ -119,7 +119,7 @@ def _write_group_indexes(volumes: list[_Volume]) -> list[str]:
         group = _dirname(v.out)
         index = f"{group}/{INDEX}"
         if index not in written:
-            write_text(index, f"# {v.label}\n\nContents:\n\n")
+            write_text(index, f"# {v.label}\n\n{CONTENTS}\n\n")
             written.append(index)
             append_text(f"{_dirname(group)}/{ENTRY_POINT}", f"- [{v.label}]({_basename(group)}/{INDEX})\n")
         append_text(index, f"- [{_title(v.monolith)}]({_basename(v.out)}/{ENTRY_POINT})\n")

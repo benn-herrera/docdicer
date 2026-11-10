@@ -6,13 +6,13 @@ File names, the files a command writes and their content, exit statuses, the str
 
 ## §1 What docdicer is
 
-docdicer turns large markdown documents into trees of small linked files. It guarantees five outcomes:
+docdicer turns large markdown documents into trees of small linked files, and checks and shows development plans as a board. It guarantees five outcomes:
 
 - **Navigable.** Every entry point and index lists the files directly below it, so the tree's entry point leads to every file; `check-tree` verifies this (§3, §8.5).
 - **Lossless.** Each line of the source appears in exactly one file, unaltered except for link rewriting (§4); this is verified after every dicing (§8.1).
 - **Linked.** Cross references in the source (`§N`, `#anchor`, relative paths) resolve in the tree (§4, §8.2, §8.4).
-- **Repeatable.** Equal inputs give equal trees and messages. Nothing depends on the clock, the network, or any state outside the named inputs.
-- **Non-destructive.** No command modifies a source document.
+- **Repeatable.** For every command but `kanban`, equal inputs give equal trees and messages, and nothing depends on the clock, the network, or any state outside the named inputs. `kanban`'s live server is state outside its named inputs.
+- **Non-destructive.** No command modifies a source document, except that `kanban` moves entries between `ROADMAP.md` and the active design, in either direction (§11.3).
 
 ## §2 Command line
 
@@ -28,6 +28,8 @@ The program is the command `docdicer <command> [arguments]`.
 | `list` | classify every bold-led line of a document | §9.2 |
 | `check-links` | check relative links and anchors of any markdown files | §8.4 |
 | `check-tree` | check the structure of diced trees | §8.5 |
+| `check-plan` | check a plan's status form | §8.6 |
+| `kanban` | serve a live board of the development process's files | §11 |
 
 `docdicer --version` prints the version and exits 0. `-h`, alone or after a command, prints help and exits 0. A missing command, a wrong argument count, or an unknown option is a usage error.
 
@@ -263,6 +265,77 @@ A directory's **head** is its `entry-point.md` if present, else its `index.md`. 
 
 Links count as in §8.4. The summary `documents checked: <N>, problems: <P>` goes to stdout, summed over roots; `<N>` counts every `.md` file under a root, its `entry-point.md` included, and a root without `entry-point.md` counts none. Exit 1 if any problem.
 
+### §8.6 `check-plan`
+
+`docdicer check-plan [<plan>]` checks that a development plan is written in the form below, so that a program reading the plan can read all of it. The form is adjagent's plan status form. The command reports what is present and unreadable, and a post-plan review or burndown package without the other; what is otherwise absent is valid.
+
+**Terms.**
+
+- **plan**: a tracked markdown document that lays out work as work packages and records their progress. It is a monolith, one file, or a diced tree (§3) given by its `entry-point.md`: a file named `entry-point.md` is read as one plan together with every other `.md` file beneath its directory, the entry point first.
+- **work package**: one unit of a plan's work, a row of the plan's status table, named by the ID in that row's `Package` cell. A row whose `Package` cell is empty is not a work package.
+- **status table**: the first table under a `## Status` heading (a level-2 heading whose text is `Status`; the section runs to the next heading of level 1 or 2) whose header cells include `Package` and `State`, matched without regard to case. In a diced plan the heading may be in any of its files. The table is found by those two headers alone. The form also has a `Rating` header, matched without regard to case; other columns are free.
+- **state**: a work package's progress as its State cell records it. A cell opening with `dispatchable` (ready to hand to an agent), `in progress` (dispatched, not yet landed) or `landed` (accepted and committed) states that word, lowercase and without markup, as a whole word; any text after it is a note. An empty cell states **drafted**.
+- **rating**: a work package's kind of work as its Rating cell records it. A cell opening with `mechanical` (every edit enumerated, no design choice and no debugging) or `expert` (anything else) states that word, lowercase and without markup, as a whole word; any text after it is a note. A package whose Rating cell opens with neither word, an empty cell included, or whose table has no `Rating` column, is **unrated**.
+- **release line**: a line opening with `Release:` at column 0. Its version is the text after the colon, surrounding spaces removed.
+- **title**: in the first heading, in reading order, whose text opens with a work package's ID — the ID followed by neither a letter, digit or `_`, nor a `.` or `-` followed by one — the text after the ID and after any run of characters each whitespace or one of `:` `.` `,` `;` `|` `/` `)` `]` `-` `–` `—`. A package with no such heading is untitled and is neither post-plan package kind.
+- **post-plan review package**, **post-plan burndown package**: A title opens with `Post-plan review` (or `Post-plan burndown`) where it begins with those characters, case-sensitive, followed by the end of the title or a character that is not a letter or digit. A package whose title opens with `Post-plan review` is a **post-plan review package**; with `Post-plan burndown`, a **post-plan burndown package**.
+
+Headings, tables and lines inside fenced code (§3.1) are not part of the form.
+
+**The form, as checked.** A plan with no status table, no work packages, no H1 heading, no release line or neither post-plan package is valid. A plan has a breach where:
+
+| Breach | Reported at | `found` text |
+|---|---|---|
+| a work package's ID is the ID of an earlier row | the later row | the ID and the line of the row that first holds it |
+| a work package's ID holds a space | the row | the ID |
+| a State cell is non-empty and opens with none of the three state words | the row | the cell |
+| the status table has no `Rating` column | the table's header line | the header line |
+| a work package's Rating cell opens with neither rating word, an empty cell included | the row | the cell |
+| a release line is not the first non-blank line after the plan's H1 heading, the first level-1 heading outside fenced code | the line | the line |
+| a release line, in that place, has no version | the line | the line |
+| a post-plan review package where the plan has no post-plan burndown package, or a post-plan burndown package where it has no post-plan review package | that package's row | the ID, a space, and the title, as `P4 Post-plan review` |
+
+The form also has a work package's heading, at any level, open with its row's ID and then its title. `check-plan` reads titles (§8.6 Terms) for the post-plan pairing, but does not check the heading, and reports no missing heading: a heading that fails to open with the ID cannot be told from one that only mentions it. Tools reading the plan show such a package untitled.
+
+**The plan checked.** With `<plan>`, that plan. Without it, the active plan of the project the command runs in. The **project root** is the nearest ancestor of the current directory, the directory itself included, that holds an entry named `.git`, found by looking at the file system; git is not run. The active plan is `ACTIVE_PLAN.md` under the root, else `ACTIVE_PLAN/entry-point.md`; where both exist, the monolith is checked. The active design is never read.
+
+**Output.** One line to stderr per breach:
+
+```text
+<file>:<line>: <problem>: <found>; accepted: <accepted form>
+```
+
+`<file>` is the file holding the line (a diced plan's breach may be in any of its files), `<line>` its 1-based number, `<problem>` names the breach, and `<found>` renders the text the table gives: `found an empty cell` where the cell is empty; otherwise `found ` and the text in a code span that holds its own backticks (delimited by one backtick more than the text's longest run of backticks, padded with a space each side), so that the text ``a`b`` reads ``found `` a`b `` ``. `<accepted form>` states what the plan may hold there, enough to correct it without the rest of this section. The `<problem>` wording is current wording:
+
+| Breach | `<problem>` |
+|---|---|
+| repeated ID | `package ID repeated in the status table` |
+| ID with a space | `package ID holds a space` |
+| State cell | `State cell opens with no state word` |
+| no Rating column | `status table has no Rating column` |
+| Rating cell | `Rating cell opens with no rating word` |
+| release line placed elsewhere | `` `Release:` line is not the first non-blank line after the H1 heading `` |
+| release line without a version | `` `Release:` line names no version `` |
+| review without burndown | `post-plan review has no post-plan burndown package` |
+| burndown without review | `post-plan burndown has no post-plan review package` |
+
+Problems are printed in reading order: by file, in the plan's reading order (the entry point first, §8.6 Terms), then by line within a file.
+
+The summary `plan checked: <plan>, work packages: <N>, problems: <P>` goes to stdout, `<N>` counting the rows with a non-empty `Package` cell.
+
+**Exit status.**
+
+| Condition | Stream | Message | Exit |
+|---|---|---|---|
+| no breach, status table or none | stdout | the summary | 0 |
+| without `<plan>`, no active plan under the root | stdout | `no active plan in <root>` | 0 |
+| any breach | stderr, stdout | the breach lines, the summary | 1 |
+| `<plan>` is not a file | stderr | the usage error `no such plan file: <plan> (name a plan's markdown file, or a diced plan's entry-point.md)` | 2 |
+| without `<plan>`, no project root | stderr | `no project root: neither <directory> nor any directory above it holds .git; run docdicer check-plan inside a project, or name the plan to check: docdicer check-plan <plan>` | 2 |
+| a file of the plan cannot be read | stderr | `cannot read: <file>` | 2 |
+
+A plan with an unreadable file exits 2 naming an unreadable file, before any breach or summary is printed. A diced plan's unreadable file is any `.md` file beneath the entry point's directory that cannot be read as a file, a dangling symbolic link among them.
+
 ## §9 Transforms
 
 ### §9.1 `refactor`
@@ -317,3 +390,124 @@ Input outside this specification is refused with a message naming what to fix, n
 - A heading's link text is used verbatim in Contents blocks; a title containing `]` or unbalanced brackets yields a malformed Contents link that no command repairs; a heading holding a link does too. `check-tree` reports it, and `undice` reports that section's file as not reproduced.
 - A conversion by `refactor` can place a heading deeper than level 4, which dicing then keeps as text (§3.1).
 - `undice` on a `dice-docs` volume is best effort: links made through a link map come back as paths, and its self-check (§6.1) reports what does not round-trip.
+
+## §11 `kanban`
+
+`docdicer kanban [<project-dir>]` serves a live board of a project's development-process files on the local machine, for the user to open in a browser. The board shows the roadmap, the active design and the active plan's work packages as cards in columns. Its only writes to documents are the moves of an entry between `ROADMAP.md` and the active design, made by dropping a card on Design or on Roadmap (§11.3); after a move, the entry is in exactly one of the two documents (a move that fails partway is described under **Writes**, §11.3). The plan columns are read-only: a work package's state changes only by an edit to the plan, which the board then shows (§11.4, §11.5). The board stores nothing (§11.6).
+
+The board reads the files as they are, in the form `check-plan` checks (§8.6), and shows a plan that holds breaches of that form all the same, reading a State cell that opens with no state word as drafted. Terms of §8.6 (plan, work package, state, rating, title, status table, release line, project root, active plan) are used as defined there.
+
+**Start.** `<project-dir>` names a directory inside the project; without it the project is the one the command runs in. The project root is found from that directory as §8.6 defines it. Once the server is listening it prints the page's URL, `http://127.0.0.1:<port>/`, on a line of its own to stdout; the user opens that URL. The server accepts connections from the local machine only (`127.0.0.1`), and refuses a request whose `Host` header is not the server's own address (`127.0.0.1` or `localhost`, with the port), so that a page served from elsewhere cannot drive the board. It then runs until interrupted; interrupting it (Ctrl-C) ends the process with exit 0. Which port it listens on is not fixed by this SPEC: the printed URL is the address. The server writes nothing per request: stdout carries the URL line only, and stderr carries only the diagnostics named in this section (§11.5).
+
+| Condition | Stream | Message | Exit |
+|---|---|---|---|
+| more than one argument, or an unknown option | stderr | the usage error | 2 |
+| `<project-dir>` is not a directory | stderr | the usage error `no such directory: <project-dir>` | 2 |
+| no project root | stderr | `no project root: neither <directory> nor any directory above it holds .git; run docdicer kanban inside a project, or name a directory inside a project: docdicer kanban <project-dir>` | 2 |
+| a document the board reads cannot be read as a file, at start | stderr | `cannot read: <file>`, before any URL is printed | 2 |
+| the port cannot be bound | stderr | `cannot listen: <reason>`, before any URL is printed | 2 |
+
+### §11.1 The project's files
+
+Under the project root the files are at fixed paths; nothing relocates them.
+
+| Document | Path |
+|---|---|
+| **roadmap** | `ROADMAP.md` |
+| **active design** | `ACTIVE_DESIGN.md`, else `ACTIVE_DESIGN/entry-point.md` |
+| active plan (§8.6) | `ACTIVE_PLAN.md`, else `ACTIVE_PLAN/entry-point.md` |
+| **parked-plans directory** | `ROADMAP_PLANS/` |
+
+Where both forms of the active design or the active plan exist, the monolith is read. A **parked entry** is a `.md` file in the parked-plans directory other than `README.md`, or a subdirectory there holding its own `entry-point.md`, counted as one entry. A parked design and a parked plan are not told apart. A document that is absent contributes no cards; a project with none of them shows an empty board.
+
+### §11.2 Columns and cards
+
+The board has six columns, left to right: Roadmap, Design, Drafted, Dispatchable, In progress, Landed. Drafted through Landed are the **plan columns**, which are read-only (§11.4).
+
+| Column | Cards |
+|---|---|
+| Roadmap | each top-level list item of `ROADMAP.md`; each parked entry that no list item links and whose link section (§11.3) is not in the active design |
+| Design | each level-2 section of the active design, one card each |
+| Drafted | each work package whose State cell is empty or opens with a word other than the three state words |
+| Dispatchable, In progress, Landed | each work package whose State cell opens with that state word |
+
+**Roadmap cards.** A top-level list item is a line opening with `-`, `*` or `N.` (digits and a full stop) in column 0, outside fenced code; the item runs over its continuation lines to the next item or heading, or to a line in column 0 after a blank line. Its title is its bold lead where its text opens with one, else its first sentence, either without a closing `.` or `:`, and with each markdown link `[text](target)` reduced to its text; the heading that a move to Design writes (§11.3) is this title. A title taken from a first sentence is cut to at most 60 characters, ending in `…` where cut. The card shows the item's level-2 heading above it as its group, if any.
+
+**Parked entries.** A parked entry that a list item links, by a link whose path names the entry's `.md` file (for a diced entry, its `entry-point.md`), has no card of its own: it shows inside the card of the item that links it. Links in a parked entry, or any link beyond that one, are not followed. A parked entry that no item links gets a generated card, titled by its file name without `.md` (a diced entry, by its directory's name), after all the cards of items, ordered among themselves by the entry's path within the parked-plans directory; the card exists only on the board. A parked entry whose link section (§11.3) is in the active design shows there as a Design card, and not in Roadmap.
+
+**Design cards.** The board reads the active design's level-2 sections, outside fenced code; in a diced design, across the entry point and its leaves, in reading order. Each section is a card, and the cards follow that order. A section that is a parked entry's link section shows as that parked entry's card; every other section shows as a card titled by its heading, with the section's text.
+
+**Work package cards.** A card shows the package's ID, its title, its rating word (`mechanical` or `expert`) or that it is unrated, and its lifetime where the status table has a `Lifetime` column, matched without regard to case. A package's title is as §8.6 Terms defines it; an untitled package shows untitled. A plan whose table has no `Rating` column is still shown, its packages unrated. Cards in a plan column follow the status table's row order.
+
+**Header.** The header shows the active plan's release (the version of its release line, displayed as written and never interpreted), and "hardening" where the plan's level-1 heading opens `Release hardening`.
+
+### §11.3 Moves between Roadmap and Design
+
+Dropping a card moves its entry between `ROADMAP.md` and the active design. After a move the entry is in exactly one of the two documents, with its text preserved. These moves are the board's only writes to documents. A section of the design is a **link section** where it is the one a move writes for a parked entry (below), unedited.
+
+**Roadmap to Design.** Dropping a roadmap card or a generated parked-entry card on Design:
+
+- *roadmap card*: the item is removed from `ROADMAP.md` and a level-2 section is added to the design, its heading the card's title and its body the item's text as written, its marker removed and its relative links rebased as below;
+- *parked-entry card*: a level-2 section is added whose heading is the card's title and whose body is a link to the parked entry, resolving from the file holding the section, and the line `complete and update this design`; the entry file and `ROADMAP.md` are not touched.
+
+| The active design | The addition |
+|---|---|
+| absent | `ACTIVE_DESIGN.md` is created, opening with the level-1 heading `# ACTIVE DESIGN` (never the moved card's title), then the section |
+| a monolith | the section is appended to it, a blank line parting it from the text above |
+| a diced tree | the section is a new leaf in the directory of `entry-point.md`, named as dicing names a level-2 section (`<name>.md`, the §3.2 name of the title: `<number>-<slug>` where numbered), and the line `- [<title>](<name>.md)` is added at the end of the list under the last `Contents:` line of `entry-point.md` (a Contents block is added at its end where there is none) |
+
+**Design to Roadmap.** Dropping a design card on Roadmap removes its section from the design and, unless the card is a link section, adds an item to `ROADMAP.md`. In a diced design a section held by a leaf is that leaf: the leaf and its line in the Contents list are removed. A link section is removed and nothing is added; its parked entry has no card of its own again and shows in Roadmap (§11.2).
+
+The item is a top-level list item (§11.2) placed at the end of the level-2 group of the Roadmap card the drop landed on, or at the end of the file where the drop landed on a parked-entry card, on no card, on a card with no group, or on a card that is no longer on the board. It takes the list marker of the items of the group it is placed in (a numbered group's next number), or, placed at the end of the file, of the group open at the end of `ROADMAP.md`; `-` where that group has no items or the file has none. `ROADMAP.md` is created, holding the item alone, where it is absent.
+
+- A section that is **unchanged** since its addition returns as the item it was, so that moving a card to Design and back leaves `ROADMAP.md` and the design byte-identical to before, on the conditions under **Links** below. A section is unchanged only where both hold: its heading is the title that its body, read as an item, would give (§11.2); and its lines, after the list marker, read back as exactly one top-level list item.
+- Any other section returns in the bold-lead form: an item whose bold lead is its heading and whose text is its body.
+
+**A section in `entry-point.md`.** A level-2 section that sits in a diced design's `entry-point.md`, not in a leaf, moves as a monolith section does: its lines are removed from the file holding them, with no leaf and no Contents line removed. The Roadmap to Design addition in a diced design is a leaf (above); it is never written into `entry-point.md`.
+
+**Links.** A move rebases each relative link target in the entry's text from the directory of the source file to that of the destination file, by the rule for a link target in §4.3 step 4; targets that §4.3 step 2 leaves unchanged stay unchanged. This holds in both directions. The rebase is its own inverse for links in normal form.
+
+A round trip (Roadmap to Design and back) leaves `ROADMAP.md` and the design byte-identical only where nothing was edited in between and all of these hold:
+
+- the entry's links are in normal form;
+- the item was the last of its level-2 group, with no blank line before it, and is dropped back on a card of that group;
+- the design did not end in a blank line before the addition;
+- for a diced design, `entry-point.md` already held a `Contents:` block over a non-empty list;
+- each file written ends in a newline (a file that does not gains one).
+
+Where a condition fails the entry still returns with its text preserved, but the surrounding blank lines, the item's place or a `Contents:` block may differ.
+
+**Refusals.** A move is refused, and nothing is written, where:
+
+- a file the move writes (`ROADMAP.md`, the design file, or in a diced design `entry-point.md` and the leaf) has a content, existence or absence different from when the board last read it, checked for every such file immediately before the first write; a change after that check is not detected;
+- the active design is a diced tree and the title's §3.2 name is empty (an unnumbered title with an empty slug), refused with a message naming that cause;
+- the active design is a diced tree and the leaf to add already exists, refused with a message naming that cause;
+- the move must remove a line from the Contents list of a diced design's `entry-point.md` and cannot find it;
+- a document the move reads cannot be read, refused with `cannot read: <file>`, `<file>` as a path from the project root (a move never reads the active plan); or
+- the dropped card is no longer on the board, its item, parked entry or section having changed or been removed since the page showed it.
+
+The refusal is shown to the user and names the cause.
+
+**Writes.** Each file is written whole. The addition is written before the removal, so that a failure partway leaves the entry in both documents and never in neither. A write that fails at the file system is reported as `cannot write: <file>`, `<file>` the file that could not be written, and names the files already written. After a move the page shows a notice naming the files written, as paths from the project root with `/` separators.
+
+### §11.4 The plan columns are read-only
+
+The cards in the plan columns cannot be dragged, and nothing can be dropped on a plan column. The page shows this on sight: the plan columns and their cards are visibly set apart from Roadmap and Design, whose cards can be dragged. A work package's state changes only by an edit to the plan file, which the board shows (§11.5).
+
+**Drops not accepted.** The only drops accepted are a roadmap or parked-entry card on Design and a design card on Roadmap (both §11.3). Any other drop is not accepted and the card returns to its column. A departure from the common path, such as a plan with no design or a skipped step, is never refused and never asks for confirmation.
+
+### §11.5 Live following
+
+A change to a watched file, to its content, creation or deletion, appears on the open page without a reload, within about a second. The watched files are the roadmap, the parked entries, the active design and the active plan with its leaves.
+
+When three consecutive attempts of the page to reach the server fail, the page says the server has stopped and to restart `docdicer kanban` and open the URL it prints, and no drag starts. The page keeps trying; a successful attempt restores the board's live state and drags.
+
+A document that cannot be read as a file while the server runs is named on stderr as `cannot read: <file>`, and the board keeps its last good state until the file reads again.
+
+### §11.6 The board stores nothing
+
+The board keeps no UI state and writes no file, in the project or elsewhere, for itself. Its only writes are the moves of §11.3. A restarted server shows the files as they then are, and nothing else.
+
+### §11.7 What `kanban` does not do
+
+It makes no inference call, runs no subprocess, reads no git history and fetches nothing from the network; every write is a fixed transformation of file content (§11.3). It has no filters, pull-downs, search, sorting or custom drop affordances. The project root is found by looking at the file system (§8.6).
