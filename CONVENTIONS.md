@@ -36,13 +36,19 @@ protection.
 
 ## Plan & Execute
 
+edit gate: `just test`
+
+checkpoint gate: `just format`, then `just test`
+
 Plans are committed files, never ignored ones.
 
 - **`ACTIVE_PLAN.md`** in docdicer's root, beside this file, is the one plan under way: decisions
   confirmed at kickoff, work-package boundaries, sequencing and status. Dispatched agents execute
   out of it; status updates as work packages land. It records its base commit at kickoff. Each package
   updates the SPEC.md, ARCHITECTURE.md, CONVENTIONS.md and README.md text its change invalidates,
-  in the commit that lands it. The file is deleted when its post-sprint burndown lands.
+  in the commit that lands it. The file is deleted when its post-plan burndown lands.
+- **`ACTIVE_PLAN_REVIEW.md`** in docdicer's root, beside `ACTIVE_PLAN.md`, holds the post-plan
+  review's findings. It is a committed file, like the plan.
 - **`ROADMAP_PLANS/`**, also in docdicer's root, holds partly-planned work that is not under way,
   with enough design done that someone could pick it up. A plan leaves when it becomes the active
   plan, is finished, or is abandoned. A plan there cites only tracked paths.
@@ -80,17 +86,20 @@ Every package is rated by what it must decide, not how much it types:
 - **expert**: it must choose between defensible options, diagnose behaviour, or write
   model-facing prose. Runs on the coordinator's model.
 
-### Post-sprint review
+### Post-plan review
 
-Every activated plan ends with this review:
+Every activated plan ends with two packages, each with its own ID and row: the post-plan review,
+then the post-plan burndown. The pairing is keyed on titles opening `Post-plan review` and
+`Post-plan burndown` (SPEC §8.6 Terms); `docdicer check-plan` reports one without the other.
 
 1. An architect and a python-coder review the change since the plan's base commit, tests of all
    touched code included. Their pre-task reading is THESIS.md, SPEC.md, ARCHITECTURE.md and
    CONVENTIONS.md — not the plan: they review against standards and fitness for purpose, not the
    implementation's route.
-2. Findings go to `ACTIVE_PLAN_REVIEW_BURNDOWN.md`, which meets the dispatchability rules above
-   before any item is dispatched.
-3. The burndown file is deleted with the plan.
+2. The review's findings go to `ACTIVE_PLAN_REVIEW.md`.
+3. The post-plan burndown package is drafted from `ACTIVE_PLAN_REVIEW.md` once the review lands, and
+   meets the dispatchability rules above before any item is dispatched.
+4. `ACTIVE_PLAN_REVIEW.md` and the plan are deleted together, in the commit that lands the post-plan burndown package.
 
 ### Surface audit, every third retired plan
 

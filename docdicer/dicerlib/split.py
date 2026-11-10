@@ -3,6 +3,7 @@ the entry point and each section index end with a Contents block listing what is
 
 from typing import TextIO
 
+from .heads import CONTENTS
 from .linkrewrite import Linker, Tree, parent_dir, rel
 from .outline import Outline, Section
 from .textfile import fence_flags, write_lines
@@ -10,7 +11,7 @@ from .textfile import fence_flags, write_lines
 
 def contents_block(outline: Outline, section: Section) -> list[str]:
     """The entry point lists every section, indented by depth; an index lists its children."""
-    block = ["Contents:", ""]
+    block = [CONTENTS, ""]
     if section.id == 0:
         for s in outline.sections[1:]:
             indent = "  " * (outline.depth[s.id] - 1)

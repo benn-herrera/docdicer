@@ -54,3 +54,13 @@ _venv:
     {{VENV_PYTHON}} -m pip install pip --upgrade
     {{VENV_PYTHON}} -m pip install "pytest>=8.4" "isort>=6.1" "black>=25.11" "flake8>=7.3"
   fi
+
+ADJAGENT_VER := "0.16.0"
+ADJAGENT := "\"" + VENV + "/bin/adjagent" + "\""
+agents:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  [[ -x {{ADJAGENT}} && "$({{ADJAGENT}} --version)" == "{{ADJAGENT_VER}}" ]] || \
+    {{VENV_PYTHON}} -m pip install "git+https://github.com/benn-herrera/adjagent@v{{ADJAGENT_VER}}"
+  {{ADJAGENT}} install . --harness=claude
+  {{ADJAGENT}} install . --harness=opencode

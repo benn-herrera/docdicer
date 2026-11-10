@@ -1,0 +1,123 @@
+:root {
+  color-scheme: light dark;
+  --fg: #1d1d1f;
+  --muted: #6b6b70;
+  --bg: #f4f4f6;
+  --column: #e7e7eb;
+  --card: #ffffff;
+  --line: #c9c9cf;
+  --accent: #2f6fde;
+  --alert: #b3261e;
+  font: 14px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #e6e6ea;
+    --muted: #9a9aa2;
+    --bg: #18181b;
+    --column: #232328;
+    --card: #2e2e34;
+    --line: #45454d;
+    --accent: #7aa7ff;
+    --alert: #ff8a80;
+  }
+}
+
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  color: var(--fg);
+  background: var(--bg);
+}
+
+header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 1rem;
+  padding: 0.5rem 1rem;
+}
+
+h1 { font-size: 1.1rem; margin: 0; }
+
+.tag {
+  padding: 0 0.4rem;
+  border: 1px solid currentColor;
+  border-radius: 0.6rem;
+  font-size: 0.8rem;
+}
+
+#connection { margin-left: auto; color: var(--muted); }
+
+#messages { padding: 0 1rem 0.5rem; min-height: 1.35em; }
+#messages p { margin: 0; }
+#alert { color: var(--alert); }
+
+button { font: inherit; }
+
+#board {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(13rem, 1fr);
+  gap: 0.5rem;
+  padding: 0 1rem 1rem;
+  overflow-x: auto;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid transparent;
+  border-radius: 0.4rem;
+  background: var(--column);
+}
+
+/* Outside the scrolling .cards, so it stays put; a full-width rule, a shape no card has, sets it
+   apart in outlined and filled columns alike. */
+.column-head {
+  padding: 0.5rem 0.6rem 0.4rem;
+  border-bottom: 2px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.column h2 { font-size: 0.95rem; margin: 0; }
+
+.cards {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem;
+}
+
+.card {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 0.3rem;
+  background: var(--card);
+  overflow-wrap: anywhere;
+}
+
+.card[draggable="true"] { cursor: grab; box-shadow: 0 1px 2px rgb(0 0 0 / 0.25); }
+
+/* Read-only by form, not colour alone: an outlined column of flat cards against filled columns of
+   raised, grabbable ones. */
+.column.plan { background: none; border-color: var(--line); }
+.column.plan .card { background: none; }
+
+.title { font-weight: 600; }
+.text { margin-top: 0.2rem; font-size: 0.9rem; }
+.text .para + .para { margin-top: 0.4rem; }
+code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; }
+.meta, .group, .parked { color: var(--muted); font-size: 0.85rem; }
+.group { text-transform: uppercase; letter-spacing: 0.03em; font-size: 0.75rem; }
+.parked { margin: 0.2rem 0 0; padding-left: 1rem; }

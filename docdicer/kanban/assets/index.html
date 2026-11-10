@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>docdicer kanban</title>
+<link rel="stylesheet" href="board.css">
+</head>
+<body>
+<header>
+  <h1>docdicer kanban</h1>
+  <span id="release"></span>
+  <span id="hardening" class="tag" hidden>hardening</span>
+  <span id="connection" aria-live="polite"></span>
+</header>
+<div id="messages">
+  <p id="notice" role="status"></p>
+  <p id="alert" role="alert"></p>
+</div>
+<main id="board"></main>
+<script src="board.js"></script>
+</body>
+</html>

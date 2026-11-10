@@ -4,7 +4,9 @@ Bytes that are not valid utf-8 survive a read/write round trip (surrogateescape)
 keeps a document's line endings exactly as written.
 """
 
+import os
 import re
+import shutil
 
 _TERMINATED_LINE = re.compile(r"[^\n]*\n|[^\n]+$")
 
@@ -47,6 +49,23 @@ def join_lines(lines: list[str]) -> str:
 
 def write_lines(path: str, lines: list[str]) -> None:
     write_text(path, join_lines(lines))
+
+
+def replace_lines(path: str, lines: list[str]) -> None:
+    """Write lines to path whole or not at all: through a temporary file beside it, then a rename
+    over it, so a failure leaves the old file whole and no temporary file behind. A symbolic link
+    is written through, and an existing file keeps its permission bits."""
+    path = os.path.realpath(path)
+    temporary = f"{path}.{os.getpid()}.tmp"  # never `.md`: readers of a directory's `.md` files skip it
+    try:
+        write_lines(temporary, lines)
+        if os.path.exists(path):
+            shutil.copymode(path, temporary)
+        os.replace(temporary, path)
+    except OSError:
+        if os.path.lexists(temporary):
+            os.remove(temporary)
+        raise
 
 
 def is_blank(line: str) -> bool:

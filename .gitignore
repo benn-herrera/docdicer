@@ -6,8 +6,10 @@ dist/
 build/
 *.egg-info/
 .claude/
+.claude
 .claude-temp/
 .opencode/
+.opencode
 .opencode-temp/
 
 docdicer/test/temp/

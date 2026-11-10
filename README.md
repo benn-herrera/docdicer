@@ -1,6 +1,6 @@
 # docdicer
 
-A tool for turning a single or set of heavy monolithic markdown documents into a context-friendly file hierarchy.
+A tool for dicing heavy monolithic markdown documents into a context-friendly file hierarchy, and for checking and viewing development plans as a board.
 Primary use case: turning large, complex model-facing project and plan documents into something that can
 be efficiently consumed based on need.
 
@@ -12,8 +12,9 @@ read whole.
 
 <img src="readme-img.png" width="25%"/>
 
-Python 3.9 or later, standard library only; the tools take every input as an argument and name nothing specific
-to a repository. Run them from the directory the documents' relative links are written against.
+Python 3.9 or later, standard library only. The dicing commands take every input as an argument and name nothing
+specific to a repository; run them from the directory the documents' relative links are written against.
+`check-plan` and `kanban` read a project's development-process files at their fixed names under the project root.
 
 ## Developer
 
@@ -69,8 +70,36 @@ fails, 2 on bad arguments.
   is the head above it. A leaf that its index stopped listing fails even where another document,
   such as the entry point's contents, still links it. Exit 1 on any problem, 2 on bad arguments,
   a root that is not a directory, or an unreadable `.md` under one.
+- `check-plan [<plan>]` checks that a development plan is in the form a program can read: a status
+  table under `## Status` whose `Package` and `State` columns hold unique IDs without spaces and
+  states opening with `dispatchable`, `in progress` or `landed` (an empty cell is a drafted
+  package), and a `Rating` column whose cells open `mechanical` or `expert`, and a
+  `Release: <version>` line, where present, first after the H1 heading. A package's title is the
+  text after its ID in its heading. A package whose title opens `Post-plan review` is allowed only
+  with one whose title opens `Post-plan burndown`, and the reverse. `<plan>` is a
+  monolith or a diced plan's `entry-point.md`; without it the active plan is checked, `ACTIVE_PLAN.md`
+  else `ACTIVE_PLAN/entry-point.md` under the nearest ancestor directory holding `.git`. Absence is
+  valid: no status table, or no active plan, exits 0. Prints
+  `file:line: problem: found <text>; accepted: form` to stderr per breach, in reading order, `<text>`
+  being the text found in a code span (`` found `text` ``), or `an empty cell`; then
+  `plan checked: <plan>, work packages: <N>, problems: <P>`; exit 1 on any breach, 2 on a `<plan>`
+  that is not a file, no project root, or an unreadable plan file.
+- `kanban [<project-dir>]` serves a live board of a project's development-process files on
+  `127.0.0.1`: it prints `http://127.0.0.1:<port>/` on stdout; open that URL in a browser and stop
+  the server with Ctrl-C (exit 0). `<project-dir>` is any directory inside the project; without it
+  the project is the one the current directory is in. The columns are Roadmap (`ROADMAP.md` items
+  and unlinked `ROADMAP_PLANS/` entries), Design (the active design) and, from the active plan's
+  status table, Drafted, Dispatchable, In progress and Landed. The page follows edits to those files
+  without a reload. Its only writes to documents are moves of an entry between `ROADMAP.md`
+  and the active design, made by dropping a card on Design or on Roadmap; a move is refused if a
+  file changed since the board read it. The plan columns are read-only, drawn as
+  outlined boxes of flat cards against the filled, draggable Roadmap and Design: a work package's
+  state changes by editing the plan, and the board shows the edit. The board keeps no state of its
+  own. Exit 2 on a directory that does not exist, no project root, an unreadable file at start, or a port
+  that cannot be bound.
 
-The passes behind them live in `dicerlib/`, one module each: `outline` (headings to files),
+The plan reader, `check-plan`, the board model and its server live in `kanban/`; ARCHITECTURE §2 maps
+both packages module by module. The passes behind the dicing commands live in `dicerlib/`, one module each: `outline` (headings to files),
 `split` (writing the tree), `linkrewrite` (section links, rebasing, the map), `reassemble` and
 `linkcheck` (the checks, `check-links` included), `treecheck` (`check-tree`), `refactor` (run-ins
 and the hunk check), `dicedoc` and `manifest` (the drivers), with `heads` (head-file names) and
