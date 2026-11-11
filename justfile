@@ -6,6 +6,9 @@ VENV_PYTHON := "\"" + VENV / PYBIN / "python" + EXE + "\""
 
 DD_PYTHON := "PYTHONPATH=\"" + PROJECT_ROOT + "\" " + VENV_PYTHON
 
+help:
+  @just --list
+
 [doc("run docdicer's tests: the golden cases, the round trip and the per-module unit tests")]
 test: _venv
   {{DD_PYTHON}} -m pytest --basetemp="{{PROJECT_ROOT}}/docdicer/test/temp" docdicer
@@ -33,6 +36,19 @@ tag: _tag-clean _venv
   GPG_TTY=$(tty) git tag -s "${ver}" -m "release ${ver}"
   git tag -v "${ver}"
 
+# note: uses python3 not VENV_PYTHON to ensure zero dependencies
+[doc("run kanban board for this project using this code base's version (blocks with running http server)")]
+kanban:
+  PYTHONPATH={{PROJECT_ROOT}} python3 -m docdicer kanban
+
+[doc("run doc links check using this conde base's version")]
+check-links:
+  PYTHONPATH={{PROJECT_ROOT}} python3 -m docdicer check-links *.md
+
+[doc("run ACTIVE_PLAN format compliance check using this conde base's version")]
+check-plan:
+  PYTHONPATH={{PROJECT_ROOT}} python3 -m docdicer check-plan
+
 # Venv layout differs by OS: POSIX puts executables in .venv/bin, Windows in
 # .venv/Scripts with .exe suffixes. Resolved here via just's os() builtin.
 
@@ -50,8 +66,7 @@ _venv:
     # that is actually our minspec, so use it to ensure we're not using any features
     # beyond its ken
     [[ "$(uname)" == Darwin ]] && export PATH=/usr/bin/:${PATH} || true
-    python3 -m venv "{{VENV}}"
-    {{VENV_PYTHON}} -m pip install pip --upgrade
+    python3 -m venv --upgrade-deps "{{VENV}}"
     {{VENV_PYTHON}} -m pip install "pytest>=8.4" "isort>=6.1" "black>=25.11" "flake8>=7.3"
   fi
 
