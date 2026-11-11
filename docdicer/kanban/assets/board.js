@@ -87,6 +87,9 @@ function render(payload) {
     const { board } = payload;
     $("release").textContent = board.release ? `Release ${board.release}` : "";
     $("hardening").hidden = !board.hardening;
+    const title = `${payload.project} kanban`;
+    document.title = title;
+    $("page-title").textContent = title;
     renderColumns(payload);
     drawn = payload.version;
     if ($("alert").textContent.startsWith(NOT_DRAWN)) showAlert("");

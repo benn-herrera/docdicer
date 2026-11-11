@@ -149,6 +149,7 @@ def test_board_payload_is_the_model(tmp_path, serve):
 
     assert payload["board"] == _json_round_trip(asdict(read_board(root)))
     assert payload["plan_columns"] == [planform.DRAFTED, *planform.STATE_WORDS]
+    assert payload["project"] == "proj"
 
 
 @pytest.mark.parametrize(

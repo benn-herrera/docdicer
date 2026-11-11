@@ -390,6 +390,7 @@ Input outside this specification is refused with a message naming what to fix, n
 - A heading's link text is used verbatim in Contents blocks; a title containing `]` or unbalanced brackets yields a malformed Contents link that no command repairs; a heading holding a link does too. `check-tree` reports it, and `undice` reports that section's file as not reproduced.
 - A conversion by `refactor` can place a heading deeper than level 4, which dicing then keeps as text (§3.1).
 - `undice` on a `dice-docs` volume is best effort: links made through a link map come back as paths, and its self-check (§6.1) reports what does not round-trip.
+- A project root with no name of its own, the file-system root `/`, gives the kanban page an empty `<project>` (§11.2).
 
 ## §11 `kanban`
 
@@ -439,7 +440,7 @@ The board has six columns, left to right: Roadmap, Design, Drafted, Dispatchable
 
 **Work package cards.** A card shows the package's ID, its title, its rating word (`mechanical` or `expert`) or that it is unrated, and its lifetime where the status table has a `Lifetime` column, matched without regard to case. A package's title is as §8.6 Terms defines it; an untitled package shows untitled. A plan whose table has no `Rating` column is still shown, its packages unrated. Cards in a plan column follow the status table's row order.
 
-**Header.** The header shows the active plan's release (the version of its release line, displayed as written and never interpreted), and "hardening" where the plan's level-1 heading opens `Release hardening`.
+**Title and header.** The page is titled `<project> kanban`, `<project>` being the name of the project root's directory, in the browser's title and in the header. The header also shows the active plan's release (the version of its release line, displayed as written and never interpreted), and "hardening" where the plan's level-1 heading opens `Release hardening`.
 
 ### §11.3 Moves between Roadmap and Design
 

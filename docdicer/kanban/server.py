@@ -151,7 +151,12 @@ class KanbanServer(ThreadingHTTPServer):
         return {**self._payload(), "written": written}
 
     def _payload(self) -> dict[str, Any]:
-        return {"version": self._version, "board": asdict(self._board), "plan_columns": list(PLAN_COLUMNS)}
+        return {
+            "version": self._version,
+            "board": asdict(self._board),
+            "plan_columns": list(PLAN_COLUMNS),
+            "project": os.path.basename(self.root),
+        }
 
     def _poll(self) -> None:
         while not self._stop.wait(POLL_SECONDS):
