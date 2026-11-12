@@ -49,6 +49,10 @@ check-links:
 check-plan:
   PYTHONPATH={{PROJECT_ROOT}} python3 -m docdicer check-plan
 
+[doc("run ACTIVE_DESIGN final-form check using this code base's version")]
+check-design:
+  PYTHONPATH={{PROJECT_ROOT}} python3 -m docdicer check-design
+
 # Venv layout differs by OS: POSIX puts executables in .venv/bin, Windows in
 # .venv/Scripts with .exe suffixes. Resolved here via just's os() builtin.
 
@@ -70,12 +74,15 @@ _venv:
     {{VENV_PYTHON}} -m pip install "pytest>=8.4" "isort>=6.1" "black>=25.11" "flake8>=7.3"
   fi
 
-ADJAGENT_VER := "0.16.0"
-ADJAGENT := "\"" + VENV + "/bin/adjagent" + "\""
-agents:
+DEVPRO_VER := "0.17.0"
+PYTHON := "\"" + VENV + "/bin/python" + "\""
+DEVPRO := "\"" + VENV + "/bin/devpro" + "\""
+agents: _venv
   #!/usr/bin/env bash
   set -euo pipefail
-  [[ -x {{ADJAGENT}} && "$({{ADJAGENT}} --version)" == "{{ADJAGENT_VER}}" ]] || \
-    {{VENV_PYTHON}} -m pip install "git+https://github.com/benn-herrera/adjagent@v{{ADJAGENT_VER}}"
-  {{ADJAGENT}} install . --harness=claude
-  {{ADJAGENT}} install . --harness=opencode
+  [[ -x {{DEVPRO}} && "$({{DEVPRO}} --version)" == "{{DEVPRO_VER}}" ]] || \
+    {{PYTHON}} -m pip install "git+https://github.com/benn-herrera/devpro@v{{DEVPRO_VER}}"
+  {{DEVPRO}} install . --harness=opencode
+  {{DEVPRO}} install . --harness=claude
+
+import? '.opencode/plugins/devpro/skills/docdicer/tools/runner-snippets/docdicer.just'

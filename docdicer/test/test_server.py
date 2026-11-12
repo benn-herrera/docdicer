@@ -143,7 +143,12 @@ def test_page_and_its_files_are_served(tmp_path, serve):
 def test_board_payload_is_the_model(tmp_path, serve):
     root = _project(
         tmp_path / "proj",
-        {"ACTIVE_PLAN.md": _PLAN, "ROADMAP.md": _ROADMAP, "ACTIVE_DESIGN.md": _DESIGN, "ROADMAP_PLANS/later.md": "x\n"},
+        {
+            "ACTIVE_PLAN.md": _PLAN,
+            "ROADMAP.md": _ROADMAP,
+            "ACTIVE_DESIGN.md": _DESIGN,
+            "ROADMAP_DESIGNS/later.md": "x\n",
+        },
     )
     payload = serve(root).board()
 
@@ -160,11 +165,15 @@ def test_board_payload_is_the_model(tmp_path, serve):
         ),
         pytest.param(lambda root: (root / "ACTIVE_DESIGN.md").write_text(_DESIGN, encoding="utf-8"), id="creation"),
         pytest.param(lambda root: (root / "ACTIVE_PLAN.md").unlink(), id="deletion"),
-        pytest.param(lambda root: (root / "ROADMAP_PLANS" / "new.md").write_text("x\n", encoding="utf-8"), id="parked"),
+        pytest.param(
+            lambda root: (root / "ROADMAP_DESIGNS" / "new.md").write_text("x\n", encoding="utf-8"), id="parked"
+        ),
     ],
 )
 def test_a_change_to_a_watched_file_is_followed(tmp_path, serve, change):
-    root = _project(tmp_path / "proj", {"ACTIVE_PLAN.md": _PLAN, "ROADMAP.md": _ROADMAP, "ROADMAP_PLANS/README.md": ""})
+    root = _project(
+        tmp_path / "proj", {"ACTIVE_PLAN.md": _PLAN, "ROADMAP.md": _ROADMAP, "ROADMAP_DESIGNS/README.md": ""}
+    )
     client = serve(root)
     before = client.board()
 
@@ -259,9 +268,11 @@ def test_a_card_moves_to_design_and_back(tmp_path, serve):
 @pytest.mark.parametrize(
     "path, card",
     [
-        pytest.param("api/to-design", {"title": "Gone", "path": "ROADMAP_PLANS/gone.md"}, id="to-design"),
+        pytest.param("api/to-design", {"title": "Gone", "path": "ROADMAP_DESIGNS/gone.md"}, id="to-design"),
         pytest.param(
-            "api/to-roadmap", {"title": "Gone", "text": "", "path": "ACTIVE_DESIGN.md", "parked": None}, id="to-roadmap"
+            "api/to-roadmap",
+            {"title": "Gone", "text": "", "path": "ACTIVE_DESIGN.md", "parked": None, "kind": "section"},
+            id="to-roadmap",
         ),
     ],
 )

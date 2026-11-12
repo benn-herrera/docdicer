@@ -5,11 +5,11 @@ import os
 import posixpath
 from typing import Optional, TextIO
 
-from .heads import ENTRY_POINT, HEADS, INDEX
+from .heads import ENTRY_POINT, HEADS
 from .linkcheck import check_links, heading_anchor_list, markdown_files
 from .linkrewrite import Linker, LinkMap, Tree, link_targets, parent_dir
 from .outline import Outline, Section, plan_sections
-from .reassemble import check_reassembly, contents_cut
+from .reassemble import check_reassembly, own_end
 from .split import write_tree
 from .textfile import FenceTracker, read_lines, split_lines, write_lines
 
@@ -58,9 +58,8 @@ def dice_doc(monolith: str, out: str, map_path: str, *, stdout: TextIO, stderr: 
 def _own_and_contents(out: str, path: str) -> tuple[list[str], list[str]]:
     """A tree file's own lines and, for a head, its Contents block with every line after it."""
     lines = read_lines(os.path.join(out, path))
-    is_head = path == ENTRY_POINT or path.endswith(f"/{INDEX}")
-    cut = contents_cut(lines) if is_head else -1
-    return (lines, []) if cut < 0 else (lines[:cut], lines[cut:])
+    end = own_end(path, lines)
+    return lines[:end], lines[end:]
 
 
 def _undiced_lines(tree: Tree, *, err: TextIO) -> tuple[list[str], bool, list[tuple[str, Optional[int]]]]:

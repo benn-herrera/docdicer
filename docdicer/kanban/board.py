@@ -23,16 +23,20 @@ from ..dicerlib.textfile import fence_flags, is_blank, read_text, replace_lines,
 from .planform import (
     ACTIVE_DESIGN,
     ACTIVE_PLAN,
+    DELTA,
+    DELTA_HEADINGS,
     DRAFTED,
+    ENTRY,
     HEADING,
     ROADMAP,
+    SECTION,
     STATE_WORDS,
-    PlanFile,
+    DesignPart,
     WorkPackage,
     active_document,
-    file_headings,
+    design_files,
+    design_from_files,
     parked_entries,
-    plan_files,
     read_plan,
 )
 
@@ -65,10 +69,11 @@ class ParkedCard:
 
 @dataclass
 class DesignCard:
-    title: str  # the section's `##` heading
-    text: str  # the section's lines below its heading, blank lines at either end dropped
-    path: str  # the file holding the section, relative to the project root
+    title: str  # the part's heading; an entry's with each link reduced to its text
+    text: str  # the lines below its heading, blank lines at either end dropped; "" for a delta
+    path: str  # the file holding the part, relative to the project root
     parked: Optional[str]  # the parked entry's path where the section is its link section; else None
+    kind: str  # the DesignPart's: SECTION, DELTA (drawn as a separator) or ENTRY
 
 
 @dataclass
@@ -77,7 +82,7 @@ class Board:
     hardening: bool
     roadmap: list[RoadmapCard]
     parked: list[ParkedCard]  # parked entries neither linked nor in the design, below the roadmap cards
-    design: list[DesignCard]  # one per `##` section, in reading order
+    design: list[DesignCard]  # one per part of the design: sections, separators and entries, in document order
     packages: list[WorkPackage]  # the active plan's work packages, each in the column its state names
     sha256: dict[str, Optional[str]]  # each file a move may write, relative to the root: its digest, None if absent
 
@@ -107,7 +112,7 @@ class _Item:
 @dataclass
 class _Section:
     card: DesignCard
-    path: str  # the file holding it, as active_document and plan_files name it
+    path: str  # the file holding it, as active_document and design_files name it
     first: int  # 0-based line of its heading
     end: int  # 0-based, exclusive
 
@@ -162,10 +167,12 @@ def move_to_design(root: str, card: dict[str, Any], *, read: dict[str, Optional[
     section. Returns the files written, relative to root, in the order written, the addition first.
 
     read is the `Board.sha256` the move is made against. Raises MoveRefused, writing nothing, where
-    no card of a fresh read of the files equals card, a file to write differs from read, or a diced
-    design's new leaf has no name or already exists; MoveWriteFailed where a write fails. Raises
-    OSError where a file the move reads cannot be read.
+    card's title is a delta heading's text, no card of a fresh read of the files equals card, a file
+    to write differs from read, or a diced design's new leaf has no name or already exists;
+    MoveWriteFailed where a write fails. Raises OSError where a file the move reads cannot be read.
     """
+    if card.get("title") in DELTA_HEADINGS:
+        raise MoveRefused(f"{card['title']!r} is a delta heading: a section headed by it would be a delta, not a card")
     now = _read(root)
     item = next((i for i in now.items if asdict(i.card) == card), None)
     parked = next((p for p in now.parked if asdict(p) == card), None)
@@ -214,9 +221,11 @@ def move_to_roadmap(
     is a link section, into `ROADMAP.md` as a top-level item at the end of the `##` group of target,
     the roadmap card dropped on as served, else at the end of the file. An unchanged section returns
     as the item it was; any other gives its heading as the item's bold lead. Returns, refuses and
-    fails as move_to_design does; refuses too where the Contents line of a leaf to delete is not
-    found.
+    fails as move_to_design does; refuses too where card is not a section's, before any read, and
+    where the Contents line of a leaf to delete is not found.
     """
+    if card.get("kind") != SECTION:
+        raise MoveRefused("an entry card or a delta's separator does not move to Roadmap; only a design section does")
     now = _read(root)
     section = next((s for s in now.sections if asdict(s.card) == card), None)
     if section is None:
@@ -272,12 +281,14 @@ def _read(root: str) -> _Read:
     unlinked = [path for path in entries.values() if path not in linked]
 
     design = active_document(root, ACTIVE_DESIGN)
-    files = plan_files(design) if design else []
+    files = design_files(design) if design else []
     if not files:
         digests[ACTIVE_DESIGN] = None
     for f in files:
-        digests[root_relative(root, f.path)] = sha256(read_text(f.path))
-    sections = [s for f in files for s in _file_sections(root, f, unlinked)]
+        digests[root_relative(root, f.path)] = sha256(f.text)
+    lines = {f.path: f.lines for f in files}
+    parts = design_from_files(files).parts if files else []
+    sections = [_design_section(root, part, lines[part.path], unlinked) for part in parts]
     in_design = {s.card.parked for s in sections}
     return _Read(
         roadmap=roadmap,
@@ -286,36 +297,22 @@ def _read(root: str) -> _Read:
         parked=[ParkedCard(_entry_name(path), path) for path in unlinked if path not in in_design],
         design=design,
         diced=design is not None and os.path.basename(design) == ENTRY_POINT,
-        lines={f.path: f.lines for f in files},
+        lines=lines,
         sections=sections,
         sha256=digests,
     )
 
 
-def _file_sections(root: str, f: PlanFile, unlinked: list[str]) -> list[_Section]:
-    """The `##` sections of one design file; a head file's sections end at its last `Contents:`
-    line, where its Contents block begins."""
-    cut = len(f.lines)
-    if os.path.basename(f.path) in HEADS:
-        contents = contents_cut(f.lines)
-        cut = contents if contents >= 0 else cut
-    headings = file_headings(f)
-    here = _directory(root, f.path)
-    sections = []
-    for k, h in enumerate(headings):
-        if h.level != 2 or h.line - 1 >= cut:
-            continue
-        end = min(next((g.line - 1 for g in headings[k + 1 :] if g.level <= 2), len(f.lines)), cut)
-        body = _trimmed(f.lines[h.line : end])
-        parked = next(
-            (p for p in unlinked if h.text == _entry_name(p) and body == _link_body(p, here)),
-            None,
-        )
-        if parked is not None and f.lines[h.line - 1] != f"## {h.text}":
-            parked = None
-        card = DesignCard(h.text, "\n".join(body), root_relative(root, f.path), parked)
-        sections.append(_Section(card, f.path, h.line - 1, end))
-    return sections
+def _design_section(root: str, part: DesignPart, lines: list[str], unlinked: list[str]) -> _Section:
+    """The card and line range of one part of the design, lines being its file's."""
+    body = [] if part.kind == DELTA else _trimmed(lines[part.first + 1 : part.end])
+    parked = None
+    if part.kind == SECTION and lines[part.first] == f"## {part.heading}":
+        here = _directory(root, part.path)
+        parked = next((p for p in unlinked if part.heading == _entry_name(p) and body == _link_body(p, here)), None)
+    title = _link_texts(part.heading) if part.kind == ENTRY else part.heading
+    card = DesignCard(title, "\n".join(body), root_relative(root, part.path), parked, part.kind)
+    return _Section(card, part.path, part.first, part.end)
 
 
 def _write(root: str, changes: list[tuple[str, Optional[list[str]]]], read: dict[str, Optional[str]]) -> list[str]:

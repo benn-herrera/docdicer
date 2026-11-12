@@ -87,28 +87,48 @@ fails, 2 on bad arguments.
   being the text found in a code span (`` found `text` ``), or `an empty cell`; then
   `plan checked: <plan>, work packages: <N>, problems: <P>`; exit 1 on any breach, 2 on a `<plan>`
   that is not a file, no project root, or an unreadable plan file.
+- `check-design [<design>]` checks that a design is in its final form, ready to plan from; a design
+  still in progress fails it. A design holds one to three level-2 delta sections headed exactly
+  `SPEC delta`, `ARCHITECTURE delta` and `Code delta`, each at most once and in that order, and no
+  other level-2 heading. A delta holds entries, each a level-3 heading with a non-empty title (a
+  link's text is the title) and the lines below it; a delta with no entries is valid, but a line
+  before its first entry is not. Lines outside a delta are free except a level-2 heading. Whether
+  an entry's link resolves is `check-links`'s to say. `<design>` is a monolith or a diced design's
+  `entry-point.md`; without it the active design is checked, `ACTIVE_DESIGN.md` else
+  `ACTIVE_DESIGN/entry-point.md` under the nearest ancestor directory holding `.git`. A diced design
+  is read in document order, following the links of each head file's last `Contents:` list. Prints
+  `file:line: problem: found <text>; accepted: form` to stderr per breach, in document order, then
+  `design checked: <design>, entries: <N>, problems: <P>` to stdout; exit 1 on any breach, 2 on a
+  `<design>` that is not a file, no project root, or an unreadable file of the design. No active
+  design prints `no active design in <root>` and exits 0.
 - `kanban [<project-dir>]` serves a live board of a project's development-process files on
   `127.0.0.1`: it prints `http://127.0.0.1:<port>/` on stdout; open that URL in a browser and stop
   the server with Ctrl-C (exit 0). `<project-dir>` is any directory inside the project; without it
   the project is the one the current directory is in. The columns are Roadmap (`ROADMAP.md` items
-  and unlinked `ROADMAP_PLANS/` entries), Design (the active design) and, from the active plan's
-  status table, Drafted, Dispatchable, In progress and Landed. The page follows edits to those files
-  without a reload. Its only writes to documents are moves of an entry between `ROADMAP.md`
-  and the active design, made by dropping a card on Design or on Roadmap; a move is refused if a
-  file changed since the board read it. The plan columns are read-only, drawn as
-  outlined boxes of flat cards against the filled, draggable Roadmap and Design: a work package's
+  and the `ROADMAP_DESIGNS/` entries no item links, unless the entry's link section is in the
+  active design), Design (the active design) and, from the active plan's status table, Drafted,
+  Dispatchable, In progress and Landed. In Design, each level-2 section that is not a delta is a
+  movable card; each `SPEC delta`, `ARCHITECTURE delta` or `Code delta` section (see
+  `check-design`) is a separator band and each of its entries a card under it. Entry cards and
+  bands cannot be dragged and do not move to Roadmap. The page follows edits to those files without
+  a reload. Its only writes to documents are moves of an entry between `ROADMAP.md` and the active
+  design, made by dropping a Roadmap card or a movable Design card on the other column; a move is
+  refused if a file changed since the board read it, and a card dropped on Design whose title is a
+  delta heading's text is refused. The plan columns are read-only, drawn as outlined boxes of flat
+  cards against the filled, draggable Roadmap cards and Design's movable cards: a work package's
   state changes by editing the plan, and the board shows the edit. The board keeps no state of its
-  own. Exit 2 on a directory that does not exist, no project root, an unreadable file at start, or a port
-  that cannot be bound.
+  own. Exit 2 on a directory that does not exist, no project root, an unreadable file at start, or
+  a port that cannot be bound.
 
-The plan reader, `check-plan`, the board model and its server live in `kanban/`; ARCHITECTURE §2 maps
-both packages module by module. The passes behind the dicing commands live in `dicerlib/`, one module each: `outline` (headings to files),
-`split` (writing the tree), `linkrewrite` (section links, rebasing, the map), `reassemble` and
-`linkcheck` (the checks, `check-links` included), `treecheck` (`check-tree`), `refactor` (run-ins
-and the hunk check), `dicedoc` and `manifest` (the drivers), with `heads` (head-file names) and
-`textfile` (file I/O and fenced code) beneath them all. `just test` runs one pytest test per golden
-case under `docdicer/test/data/`, one `undice` round trip per case that dices without a map and succeeds, and the
-per-module unit tests; `just build` builds a wheel into `dist/`.
+The plan reader, `check-plan`, `check-design`, the board model and its server live in `kanban/`;
+ARCHITECTURE §2 maps both packages module by module. The passes behind the dicing commands live in
+`dicerlib/`, one module each: `outline` (headings to files), `split` (writing the tree),
+`linkrewrite` (section links, rebasing, the map), `reassemble` and `linkcheck` (the checks,
+`check-links` included), `treecheck` (`check-tree`), `refactor` (run-ins and the hunk check),
+`dicedoc` and `manifest` (the drivers), with `heads` (head-file names) and `textfile` (file I/O and
+fenced code) beneath them all. `just test` runs one pytest test per golden case under
+`docdicer/test/data/`, one `undice` round trip per case that dices without a map and succeeds, and
+the per-module unit tests; `just build` builds a wheel into `dist/`.
 
 ## Heading convention
 

@@ -65,8 +65,8 @@ function appendInline(parent, text) {
   parent.append(text.slice(at));
 }
 
-function inlineEl(className, text) {
-  const e = el("div", className);
+function inlineEl(className, text, tag = "div") {
+  const e = el(tag, className);
   appendInline(e, text);
   return e;
 }
@@ -163,15 +163,18 @@ function textEl(text) {
   return e;
 }
 
-// A design section's card: a parked entry's link section looks like that parked card, any other
-// is titled by its heading over the section's text. Either drags as the design card served.
+// A design part. A delta is a separator band, a heading below the column's, not a card; a delta's
+// entry is a flat card that does not drag. A section's card: a parked entry's link section looks
+// like that parked card, any other is titled by its heading over the section's text; either drags
+// as the design card served.
 function designCard(card) {
+  if (card.kind === "delta") return inlineEl("separator", card.title, "h3");
   const info = { kind: "design", card };
   if (card.parked !== null) return parkedCard({ title: card.title, path: card.parked }, info);
-  const e = el("div", "card");
+  const e = el("div", card.kind === "entry" ? "card entry" : "card");
   e.append(titleEl(card.title));
   if (card.text) e.append(textEl(card.text));
-  return draggable(e, info);
+  return card.kind === "section" ? draggable(e, info) : e;
 }
 
 // A work package's card; not draggable, its state changing only by an edit to the plan.
@@ -220,8 +223,8 @@ const listed = (items) => (items.length < 2 ? items.join("") : `${items.slice(0,
 
 // ---- drag and drop -----------------------------------------------------------------------------
 
-// The only drops accepted: a roadmap or parked card on Design, a design card on Roadmap. Elsewhere
-// dragover is left uncancelled, so the browser refuses the drop and the card returns.
+// The only drops accepted: a roadmap or parked card on Design, a design section's card on Roadmap.
+// Elsewhere dragover is left uncancelled, so the browser refuses the drop and the card returns.
 function accepts(info, column) {
   if (column === DESIGN) return info.kind === "roadmap" || info.kind === "parked";
   return column === ROADMAP && info.kind === "design";

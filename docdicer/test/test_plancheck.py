@@ -1,5 +1,5 @@
-"""Unit tests for check_plan: which plan it checks with no argument, its exit statuses, and the values
-each breach message carries."""
+"""Unit tests for check_plan and check_design: which document each checks with no argument, their exit
+statuses, and the values each breach message carries."""
 
 import errno
 import io
@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 
 from docdicer.kanban import plancheck, planform
-from docdicer.kanban.plancheck import check_plan
-from docdicer.kanban.planform import BreachKind, read_plan
+from docdicer.kanban.plancheck import check_design, check_plan
+from docdicer.kanban.planform import BreachKind, read_design, read_plan
 
 _TABLE = "| Package | State | Rating |\n|---|---|---|\n"
 _CONFORMING = "# Plan\n\n## Status\n\n" + _TABLE + "| P1 | landed | expert |\n"
@@ -151,3 +151,81 @@ def test_a_read_failure_naming_no_file_names_the_plan(tmp_path, monkeypatch):
 
     assert (status, out) == (2, "")
     assert plan in err
+
+
+_DESIGN_BREACHING = "# Design\n\n## Background\n"
+
+
+def _run_design(design, start: str = "") -> tuple[int, str, str]:
+    """check_design's status, stdout and stderr, run from start."""
+    out, err = io.StringIO(), io.StringIO()
+    status = check_design(design, start=start, stdout=out, stderr=err)
+    return status, out.getvalue(), err.getvalue()
+
+
+def test_default_is_the_active_design(tmp_path):
+    project = tmp_path / "proj"
+    (project / ".git").mkdir(parents=True)
+    (project / "sub").mkdir()
+    _write(project, {"ACTIVE_DESIGN.md": _DESIGN_BREACHING})
+
+    status, out, err = _run_design(None, start=str(project / "sub"))
+
+    assert status == 1
+    assert str(project / "ACTIVE_DESIGN.md") in out
+    assert str(project / "ACTIVE_DESIGN.md") in err
+
+
+def test_no_active_design_passes(tmp_path):
+    (tmp_path / ".git").mkdir()
+    _write(tmp_path, {"ACTIVE_PLAN.md": _DESIGN_BREACHING, "ACTIVE_DESIGN/leaf.md": _DESIGN_BREACHING})
+
+    status, out, err = _run_design(None, start=str(tmp_path))
+
+    assert (status, err) == (0, "")
+    assert str(tmp_path) in out
+
+
+def test_no_project_root_is_refused_for_a_design(tmp_path, monkeypatch):
+    _write(tmp_path, {"ACTIVE_DESIGN.md": _DESIGN_BREACHING})
+    monkeypatch.setattr(planform.os.path, "lexists", lambda path: False)
+
+    status, out, err = _run_design(None, start=str(tmp_path))
+
+    assert (status, out) == (2, "")
+    assert str(tmp_path) in err
+
+
+def test_an_unreadable_contents_target_is_refused(tmp_path):
+    _write(tmp_path, {"d/entry-point.md": _DESIGN_BREACHING + "\nContents:\n\n- [gone](gone.md)\n"})
+
+    status, out, err = _run_design(str(tmp_path / "d/entry-point.md"))
+
+    assert (status, out) == (2, "")
+    assert str(tmp_path / "d/gone.md") in err
+
+
+def test_design_breach_message_carries_file_line_found_and_accepted(tmp_path):
+    _write(tmp_path, {"design.md": "## Background\n\n## SPEC delta\n"})
+    design = str(tmp_path / "design.md")
+    (breach,) = read_design(design).breaches
+    assert set(plancheck._PROBLEMS) == set(BreachKind)
+
+    status, out, err = _run_design(design)
+
+    assert status == 1
+    (line,) = err.splitlines()
+    assert f"{design}:{breach.line}" in line
+    assert breach.found in line
+    assert breach.accepted in line
+    assert design in out
+
+
+def test_an_empty_found_line_is_named(tmp_path):
+    _write(tmp_path, {"design.md": "\nText.\n"})
+
+    status, _, err = _run_design(str(tmp_path / "design.md"))
+
+    assert status == 1
+    (line,) = err.splitlines()
+    assert "found an empty line" in line

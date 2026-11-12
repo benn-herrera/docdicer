@@ -16,7 +16,7 @@ from .dicerlib.manifest import dice_docs
 from .dicerlib.refactor import list_runins, refactor
 from .dicerlib.textfile import read_lines
 from .dicerlib.treecheck import check_trees
-from .kanban.plancheck import check_plan
+from .kanban.plancheck import check_design, check_plan
 from .kanban.server import run_kanban
 
 
@@ -83,6 +83,14 @@ def _parser() -> argparse.ArgumentParser:
         " directory is in",
     )
 
+    p = commands.add_parser("check-design", help="check a design's final form, ready to plan from")
+    p.add_argument(
+        "design",
+        nargs="?",
+        help="the design, or a diced design's entry-point.md; default the active design of the project the"
+        " current directory is in",
+    )
+
     p = commands.add_parser("kanban", help="serve a live board of a project's roadmap, design and plan on 127.0.0.1")
     p.add_argument(
         "project_dir",
@@ -133,6 +141,12 @@ def main(argv: Optional[list[str]] = None) -> int:
                 f"no such plan file: {args.plan} (name a plan's markdown file, or a diced plan's entry-point.md)"
             )
         return check_plan(args.plan, start=os.getcwd(), stdout=out, stderr=err)
+    if args.command == "check-design":
+        if args.design is not None and not os.path.isfile(args.design):
+            parser.error(
+                f"no such design file: {args.design} (name a design's markdown file, or a diced design's entry-point.md)"
+            )
+        return check_design(args.design, start=os.getcwd(), stdout=out, stderr=err)
     if args.command == "kanban":
         if args.project_dir is not None and not os.path.isdir(args.project_dir):
             parser.error(f"no such directory: {args.project_dir}")

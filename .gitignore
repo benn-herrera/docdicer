@@ -5,11 +5,13 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+
 .claude/
 .claude
 .claude-temp/
 .opencode/
 .opencode
 .opencode-temp/
+backup.*
 
 docdicer/test/temp/

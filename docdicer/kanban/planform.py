@@ -1,9 +1,10 @@
-"""The plan-form reader: a development plan's title, release and work packages as its status table
-and headings record them, every breach of the plan form met on the way, and where a project keeps
-its plan files.
+"""The plan-form and design-form reader: a development plan's title, release and work packages as
+its status table and headings record them, a design's sections, deltas and entries, every breach of
+either form met on the way, and where a project keeps its plan and design files.
 
-A plan is a monolith, or a diced tree given by its `entry-point.md`; a tree's files are read as one
-plan, the entry point first. Headings and tables inside fenced code are not part of the form.
+A plan or design is a monolith, or a diced tree given by its `entry-point.md`; a tree's files are
+read as one document, the entry point first. Headings and tables inside fenced code are not part of
+the form.
 """
 
 import os
@@ -12,13 +13,15 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
-from ..dicerlib.heads import ENTRY_POINT
+from ..dicerlib.heads import ENTRY_POINT, HEADS
 from ..dicerlib.linkcheck import markdown_files
-from ..dicerlib.textfile import fence_flags, read_lines
+from ..dicerlib.linkrewrite import link_targets, never_rebased
+from ..dicerlib.reassemble import own_end
+from ..dicerlib.textfile import fence_flags, is_blank, read_text, split_lines
 
 ACTIVE_DESIGN = "ACTIVE_DESIGN.md"
 ACTIVE_PLAN = "ACTIVE_PLAN.md"
-PARKED_PLANS = "ROADMAP_PLANS"
+PARKED_DESIGNS = "ROADMAP_DESIGNS"
 ROADMAP = "ROADMAP.md"
 
 DRAFTED = "drafted"
@@ -28,6 +31,13 @@ HARDENING = "Release hardening"
 _RELEASE = "Release:"
 _REVIEW = "Post-plan review"
 _BURNDOWN = "Post-plan burndown"
+DELTA_HEADINGS = ("SPEC delta", "ARCHITECTURE delta", "Code delta")  # in the order a design holds them
+_DELTA_LIST = ", ".join(f"`## {d}`" for d in DELTA_HEADINGS)
+# The kinds of a DesignPart; plain strings, as the board's payload carries them.
+SECTION = "section"
+DELTA = "delta"
+ENTRY = "entry"
+_EMPTY_LINK = re.compile(r"!?\[\]\([^)]*\)")
 
 HEADING = re.compile(r"(#{1,6}) ")  # group 1 is the `#` run
 _STATE = re.compile("(" + "|".join(STATE_WORDS) + r")(?!\w)")
@@ -55,6 +65,13 @@ class BreachKind(Enum):
     RATING_WORD = "rating-word"
     REVIEW_UNPAIRED = "review-unpaired"
     BURNDOWN_UNPAIRED = "burndown-unpaired"
+    DELTA_MISSPELLED = "delta-misspelled"
+    NOT_A_DELTA = "not-a-delta"
+    DELTA_REPEATED = "delta-repeated"
+    DELTA_ORDER = "delta-order"
+    NO_DELTA = "no-delta"
+    DELTA_CONTENT = "delta-content"
+    ENTRY_EMPTY = "entry-empty"
 
 
 @dataclass
@@ -62,8 +79,8 @@ class Breach:
     kind: BreachKind
     path: str
     line: int  # 1-based, in path
-    found: str  # the text as the plan holds it
-    accepted: str  # the form the plan rule accepts there
+    found: str  # the text as the plan or design holds it
+    accepted: str  # the form the rule accepts there
 
 
 @dataclass
@@ -89,6 +106,21 @@ class Plan:
 
 
 @dataclass
+class DesignPart:
+    kind: str  # SECTION (a level-2 section that is not a delta), DELTA (to its first entry) or ENTRY
+    heading: str  # the heading's text as written, links unreduced
+    path: str
+    first: int  # 0-based, the heading's line
+    end: int  # exclusive; a head file's parts end at its Contents cut
+
+
+@dataclass
+class Design:
+    parts: list[DesignPart] = field(default_factory=list)  # in document order
+    breaches: list[Breach] = field(default_factory=list)
+
+
+@dataclass
 class Heading:
     path: str
     line: int  # 1-based, in path
@@ -99,13 +131,15 @@ class Heading:
 @dataclass
 class PlanFile:
     path: str
+    text: str  # the file's text as read, from which lines are split
     lines: list[str]
     fenced: list[bool]  # per line: inside fenced code
 
 
 def _read(path: str) -> PlanFile:
-    lines = read_lines(path)
-    return PlanFile(path, lines, fence_flags(lines))
+    text = read_text(path)
+    lines = split_lines(text)
+    return PlanFile(path, text, lines, fence_flags(lines))
 
 
 def plan_files(path: str) -> list[PlanFile]:
@@ -116,6 +150,48 @@ def plan_files(path: str) -> list[PlanFile]:
         return [_read(path)]
     leaves = [p for p in markdown_files([os.path.dirname(path) or "."]) if not os.path.samefile(p, path)]
     return [_read(p) for p in [path, *leaves]]
+
+
+def design_files(path: str) -> list[PlanFile]:
+    """The files of the design at path, in document order: a monolith alone; for a diced design's
+    entry point, the entry point, then each file linked from a head file's Contents block, depth
+    first in link order, each where a link first reaches it; then the files beneath the entry
+    point's directory that no such link reaches, in plan_files order. A link to anything but a
+    `.md` file beneath that directory is ignored. Raises OSError where one cannot be read. This
+    differs from undice's walk of the entry point's Contents block on purpose: a design's parts are
+    found in every head's block and in files no link reaches, each file read once."""
+    if os.path.basename(path) != ENTRY_POINT:
+        return [_read(path)]
+    top = os.path.realpath(os.path.dirname(path) or ".")
+    files: list[PlanFile] = []
+    seen: set[str] = set()
+
+    def add(p: str) -> Optional[PlanFile]:
+        key = os.path.realpath(p)
+        if key in seen:
+            return None
+        seen.add(key)
+        files.append(_read(p))
+        return files[-1]
+
+    def beneath(p: str) -> bool:
+        return p.endswith(".md") and os.path.realpath(p).startswith(top + os.sep)
+
+    def follow(p: str) -> None:
+        f = add(p)
+        if f is None or os.path.basename(p) not in HEADS:
+            return
+        for line in f.lines[own_end(f.path, f.lines) :]:
+            for target in link_targets(line):
+                if not never_rebased(target):
+                    linked = os.path.normpath(os.path.join(os.path.dirname(p), target.split("#", 1)[0]))
+                    if beneath(linked):
+                        follow(linked)
+
+    follow(path)
+    for p in markdown_files([os.path.dirname(path) or "."]):
+        add(p)
+    return files
 
 
 def file_headings(f: PlanFile) -> list[Heading]:
@@ -347,6 +423,102 @@ def _packages(table: _StatusTable, headings: list[Heading], breaches: list[Breac
     return packages
 
 
+def _part_end(headings: list[Heading], k: int, level: int, end: int) -> int:
+    """The 0-based exclusive end of the part headed by headings[k]: the next heading of level or
+    lower, else end."""
+    return next((g.line - 1 for g in headings[k + 1 :] if g.level <= level), end)
+
+
+def _section_breach(h: Heading, line: str) -> Breach:
+    """The breach of a level-2 heading that is not a delta heading: misspelled where it equals one
+    without regard to case and with each whitespace run read as one space."""
+    folded = " ".join(h.text.split()).casefold()
+    meant = next((d for d in DELTA_HEADINGS if d.casefold() == folded), None)
+    if meant is not None:
+        return Breach(BreachKind.DELTA_MISSPELLED, h.path, h.line, line, f"`## {meant}`, spelled exactly so")
+    accepted = f"no level-2 heading but {_DELTA_LIST}: make this a heading of another level, or plain text"
+    return Breach(BreachKind.NOT_A_DELTA, h.path, h.line, line, accepted)
+
+
+def _delta_breach(h: Heading, line: str, deltas: dict[str, Heading]) -> Optional[Breach]:
+    """The breach of delta heading h, deltas being the delta headings met before it, each first
+    occurrence in document order; None where h is in place."""
+    earlier = deltas.get(h.text)
+    if earlier is not None:
+        accepted = (
+            f"each delta heading once: move this delta's entries under `## {h.text}` at"
+            f" {earlier.path}:{earlier.line}, and delete this heading"
+        )
+        return Breach(BreachKind.DELTA_REPEATED, h.path, h.line, line, accepted)
+    order = DELTA_HEADINGS.index
+    later = next((g for g in deltas.values() if order(g.text) > order(h.text)), None)
+    if later is None:
+        return None
+    accepted = (
+        f"the deltas in the order {_DELTA_LIST}: move this delta, heading and entries, above `## {later.text}`"
+        f" at {later.path}:{later.line}"
+    )
+    return Breach(BreachKind.DELTA_ORDER, h.path, h.line, line, accepted)
+
+
+def read_design(path: str) -> Design:
+    """The design at path, a monolith or a diced tree's entry point, read as the design form
+    directs. Raises OSError where a file of the design cannot be read. Parts and breaches are in
+    document order (design_files), by line within a file."""
+    return design_from_files(design_files(path))
+
+
+def design_from_files(files: list[PlanFile]) -> Design:
+    """The design of files, already read, as design_files gives them (never empty), read as
+    read_design reads one; nothing is read from disk."""
+    design = Design()
+    deltas: dict[str, Heading] = {}
+    in_delta = False  # a delta is open: its heading is the last heading of level 1 or 2 met
+    before_entry = False  # the open delta has met neither an entry nor a reported content line
+    for f in files:
+        end = own_end(f.path, f.lines)
+        headings = [h for h in file_headings(f) if h.line <= end]
+        at = {h.line: k for k, h in enumerate(headings)}
+        for no in range(1, end + 1):
+            line, k = f.lines[no - 1], at.get(no, -1)
+            heading_level = headings[k].level if k >= 0 else 0
+            if 0 < heading_level <= 2:
+                in_delta = False
+            if heading_level == 2:
+                h = headings[k]
+                if h.text in DELTA_HEADINGS:
+                    breach = _delta_breach(h, line, deltas)
+                    deltas.setdefault(h.text, h)
+                    in_delta, before_entry, kind, level = True, True, DELTA, 3
+                else:
+                    breach, kind, level = _section_breach(h, line), SECTION, 2
+                design.breaches += [breach] if breach is not None else []
+                design.parts.append(DesignPart(kind, h.text, f.path, no - 1, _part_end(headings, k, level, end)))
+            elif heading_level == 3 and in_delta:
+                h = headings[k]
+                before_entry = False
+                if not h.text or _EMPTY_LINK.fullmatch(h.text):
+                    accepted = "`### <the leaf or section the entry changes>`, as text or as a link with link text"
+                    design.breaches.append(Breach(BreachKind.ENTRY_EMPTY, f.path, no, line, accepted))
+                design.parts.append(DesignPart(ENTRY, h.text, f.path, no - 1, _part_end(headings, k, 3, end)))
+            elif in_delta and before_entry and not f.fenced[no - 1] and not is_blank(line):
+                before_entry = False
+                accepted = (
+                    "only `### <leaf or section>` entries inside a delta: put this line under an entry's heading,"
+                    " or move it out of the delta"
+                )
+                design.breaches.append(Breach(BreachKind.DELTA_CONTENT, f.path, no, line, accepted))
+    if not deltas:
+        opening = files[0]
+        no = h1_line(opening.lines, opening.fenced) or 1
+        found = opening.lines[no - 1] if opening.lines else ""
+        accepted = f"at least one delta of {_DELTA_LIST}, in that order, each holding `### <leaf or section>` entries"
+        design.breaches.append(Breach(BreachKind.NO_DELTA, opening.path, no, found, accepted))
+    order = {f.path: k for k, f in enumerate(files)}
+    design.breaches.sort(key=lambda b: (order[b.path], b.line))
+    return design
+
+
 def find_project_root(start: str) -> Optional[str]:
     """The nearest of start and its ancestors holding an entry named `.git`; None where none does."""
     directory = os.path.abspath(start)
@@ -370,9 +542,9 @@ def active_document(root: str, monolith: str) -> Optional[str]:
 
 
 def parked_entries(root: str) -> list[str]:
-    """Each parked entry, sorted: a `.md` file in the parked-plans directory other than `README.md`,
+    """Each parked entry, sorted: a `.md` file in the parked-designs directory other than `README.md`,
     or the entry point of a subdirectory there holding one."""
-    directory = os.path.join(root, PARKED_PLANS)
+    directory = os.path.join(root, PARKED_DESIGNS)
     if not os.path.isdir(directory):
         return []
     entries = []
