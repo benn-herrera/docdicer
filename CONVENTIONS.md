@@ -49,9 +49,10 @@ Plans are committed files, never ignored ones.
   in the commit that lands it. The file is deleted when its post-plan burndown lands.
 - **`ACTIVE_PLAN_REVIEW.md`** in docdicer's root, beside `ACTIVE_PLAN.md`, holds the post-plan
   review's findings. It is a committed file, like the plan.
-- **`ROADMAP_PLANS/`**, also in docdicer's root, holds partly-planned work that is not under way,
-  with enough design done that someone could pick it up. A plan leaves when it becomes the active
-  plan, is finished, or is abandoned. A plan there cites only tracked paths.
+- **`ROADMAP_DESIGNS/`**, also in docdicer's root, holds designs set aside
+  before their plan is written, with enough done that someone could pick one up. A design leaves
+  when it becomes the active design (SPEC §11.1) or is abandoned. A design there cites only
+  tracked paths.
 - **SPEC.md outranks a plan on anything the plan does not set out to change.** A package that
   changes behaviour quotes the SPEC text it replaces and the replacement. Any other disagreement
   between a plan line and SPEC is settled by SPEC, and the commit that lands the work names the
@@ -122,4 +123,4 @@ Lenses, applied to every command and flow:
 
 When a plan is retired, the coordinator runs `git log --diff-filter=D --oneline -- ACTIVE_PLAN.md`;
 a count divisible by three makes the audit due. An architect runs it and reports to the user;
-adopted findings become a plan in `ROADMAP_PLANS/`.
+adopted findings become a design in `ROADMAP_DESIGNS/`.

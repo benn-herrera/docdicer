@@ -1,5 +1,6 @@
-"""Unit tests for the plan-form reader: a plan's packages, title and release, the breaches of the plan
-form it reports, and the project's root and plan-file locations."""
+"""Unit tests for the plan-form and design-form reader: a plan's packages, title and release, a
+design's files and parts, the breaches of either form it reports, and the project's root and
+plan-file locations."""
 
 from pathlib import Path
 
@@ -11,8 +12,10 @@ from docdicer.kanban.planform import (
     ACTIVE_PLAN,
     BreachKind,
     active_document,
+    design_files,
     find_project_root,
     parked_entries,
+    read_design,
     read_plan,
 )
 
@@ -394,6 +397,163 @@ def test_release_after_a_leaf_h1_is_misplaced(tmp_path):
 
 
 @pytest.mark.parametrize(
+    "files, order",
+    [
+        pytest.param(
+            {
+                "d/entry-point.md": "# D\n\nContents:\n\n- [z](z.md)\n- [a](a/index.md)\n",
+                "d/a/index.md": "## A\n\nContents:\n\n- [b](b.md)\n",
+                "d/a/b.md": "### B\n",
+                "d/z.md": "## Z\n",
+            },
+            ["d/entry-point.md", "d/z.md", "d/a/index.md", "d/a/b.md"],
+            id="link-order-against-name-order",
+        ),
+        pytest.param(
+            {
+                "d/entry-point.md": "# D\n\nContents:\n\n- [z](z.md)\n",
+                "d/m.md": "## M\n",
+                "d/z.md": "## Z\n",
+                "d/a/x.md": "## X\n",
+            },
+            ["d/entry-point.md", "d/z.md", "d/m.md", "d/a/x.md"],
+            id="unlinked-files-after-in-reading-order",
+        ),
+        pytest.param(
+            {
+                "d/entry-point.md": "# D\n\nContents:\n\n- [a](a/index.md)\n- [z](z.md#top)\n",
+                "d/a/index.md": "## A\n\nContents:\n\n- [z](../z.md)\n- [b](b.md)\n",
+                "d/a/b.md": "### B\n",
+                "d/z.md": "## Z\n",
+            },
+            ["d/entry-point.md", "d/a/index.md", "d/z.md", "d/a/b.md"],
+            id="linked-twice-read-at-its-first-link",
+        ),
+        pytest.param(
+            {"d/entry-point.md": "# D\n\n- [a](a.md)\n\nContents:\n\n- [z](z.md)\n", "d/a.md": "", "d/z.md": ""},
+            ["d/entry-point.md", "d/z.md", "d/a.md"],
+            id="only-links-from-the-last-contents-line-on",
+        ),
+        pytest.param({"d.md": "# D\n\nContents:\n\n- [z](z.md)\n", "z.md": ""}, ["d.md"], id="monolith-alone"),
+        pytest.param(
+            {
+                "d/entry-point.md": "# D\n\nContents:\n\n- [x](../x.md)\n- [p](p.txt)\n- [z](z.md)\n",
+                "x.md": "## X\n",
+                "d/p.txt": "## P\n",
+                "d/z.md": "## Z\n",
+            },
+            ["d/entry-point.md", "d/z.md"],
+            id="links-outside-the-directory-or-to-other-files-ignored",
+        ),
+    ],
+)
+def test_design_files_are_in_document_order(tmp_path, files, order):
+    _write(tmp_path, files)
+    opening = order[0]
+    assert [str(Path(f.path).relative_to(tmp_path)) for f in design_files(str(tmp_path / opening))] == order
+
+
+def _design(tmp_path: Path, text: str):
+    _write(tmp_path, {"design.md": text})
+    return read_design(str(tmp_path / "design.md"))
+
+
+@pytest.mark.parametrize(
+    "text, breaches",
+    [
+        pytest.param(
+            "# D\n\n## SPEC delta\n\n### a\n\n## architecture  Delta\n",
+            [(BreachKind.DELTA_MISSPELLED, 7, "## architecture  Delta")],
+            id="misspelled",
+        ),
+        pytest.param(
+            "# D\n\n## Background\n\n## Code delta\n",
+            [(BreachKind.NOT_A_DELTA, 3, "## Background")],
+            id="not-a-delta",
+        ),
+        pytest.param(
+            "# D\n\n## SPEC delta\n\n### a\n\n## SPEC delta\n",
+            [(BreachKind.DELTA_REPEATED, 7, "## SPEC delta")],
+            id="repeated",
+        ),
+        pytest.param(
+            "# D\n\n## Code delta\n\n## ARCHITECTURE delta\n\n## SPEC delta\n",
+            [(BreachKind.DELTA_ORDER, 5, "## ARCHITECTURE delta"), (BreachKind.DELTA_ORDER, 7, "## SPEC delta")],
+            id="out-of-order",
+        ),
+        pytest.param("Intro\n\n# D\n\nText.\n", [(BreachKind.NO_DELTA, 3, "# D")], id="no-delta-at-the-h1"),
+        pytest.param("Intro\n\n### a\n", [(BreachKind.NO_DELTA, 1, "Intro")], id="no-delta-no-h1"),
+        pytest.param(
+            "# D\n\n## SPEC delta\n\nStray.\n\n#### Deeper\n\n### a\n\nBody.\n",
+            [(BreachKind.DELTA_CONTENT, 5, "Stray.")],
+            id="content-before-first-entry-once",
+        ),
+        pytest.param(
+            "# D\n\n## SPEC delta\n\n### \n\n### [](x.md)\n\n### [x]()\n",
+            [(BreachKind.ENTRY_EMPTY, 5, "### "), (BreachKind.ENTRY_EMPTY, 7, "### [](x.md)")],
+            id="entry-names-nothing",
+        ),
+    ],
+)
+def test_design_breaches(tmp_path, text, breaches):
+    design = _design(tmp_path, text)
+    assert _breaches(design, tmp_path) == [(kind, "design.md", line, found) for kind, line, found in breaches]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("# D\n\n## SPEC delta\n\n## ARCHITECTURE delta\n\n### a\n", id="delta-with-no-entries"),
+        pytest.param("# D\n\n## Code delta\n\n### docdicer/x.py\n", id="only-a-code-delta"),
+        pytest.param(
+            "# D\n\n```\n## Background\n```\n\n## SPEC delta\n\n~~~\nfenced\n~~~\n\n### a\n",
+            id="fenced-headings-and-lines-ignored",
+        ),
+        pytest.param(
+            "# D\n\n### free\n\n## SPEC delta\n\n### a\n\n# Appendix\n\nFree again.\n", id="level-1-ends-a-delta"
+        ),
+    ],
+)
+def test_conforming_design(tmp_path, text):
+    assert _design(tmp_path, text).breaches == []
+
+
+def _parts(design, root: Path) -> list[tuple[str, str, str, int, int]]:
+    return [(p.kind, p.heading, str(Path(p.path).relative_to(root)), p.first, p.end) for p in design.parts]
+
+
+def test_design_parts_of_a_monolith(tmp_path):
+    text = (
+        "# D\n\nFree.\n\n## Background\n\n### free\n\n## SPEC delta\n\n### [§1](SPEC.md)\n\nBody.\n\n#### Deeper\n\n"
+        "## Code delta\n\n### x.py\n"
+    )
+    design = _design(tmp_path, text)
+    assert _parts(design, tmp_path) == [
+        ("section", "Background", "design.md", 4, 8),
+        ("delta", "SPEC delta", "design.md", 8, 10),
+        ("entry", "[§1](SPEC.md)", "design.md", 10, 16),
+        ("delta", "Code delta", "design.md", 16, 18),
+        ("entry", "x.py", "design.md", 18, 19),
+    ]
+
+
+def test_design_parts_of_a_diced_design(tmp_path):
+    _write(
+        tmp_path,
+        {
+            "d/entry-point.md": "# D\n\n## SPEC delta\n\nContents:\n\n- [a](a.md)\n",
+            "d/a.md": "### a\n\nBody.\n",
+        },
+    )
+    design = read_design(str(tmp_path / "d/entry-point.md"))
+    assert design.breaches == []
+    assert _parts(design, tmp_path) == [
+        ("delta", "SPEC delta", "d/entry-point.md", 2, 4),
+        ("entry", "a", "d/a.md", 0, 3),
+    ]
+
+
+@pytest.mark.parametrize(
     "git, start, root",
     [
         pytest.param("proj/.git/", "proj/a/b", "proj", id="from-nested-directory"),
@@ -437,15 +597,15 @@ def test_active_document(tmp_path, files, monolith, expected):
     [
         pytest.param(
             [
-                "ROADMAP_PLANS/README.md",
-                "ROADMAP_PLANS/b.md",
-                "ROADMAP_PLANS/a.md",
-                "ROADMAP_PLANS/notes.txt",
-                "ROADMAP_PLANS/diced/entry-point.md",
-                "ROADMAP_PLANS/diced/leaf.md",
-                "ROADMAP_PLANS/loose/leaf.md",
+                "ROADMAP_DESIGNS/README.md",
+                "ROADMAP_DESIGNS/b.md",
+                "ROADMAP_DESIGNS/a.md",
+                "ROADMAP_DESIGNS/notes.txt",
+                "ROADMAP_DESIGNS/diced/entry-point.md",
+                "ROADMAP_DESIGNS/diced/leaf.md",
+                "ROADMAP_DESIGNS/loose/leaf.md",
             ],
-            ["ROADMAP_PLANS/a.md", "ROADMAP_PLANS/b.md", "ROADMAP_PLANS/diced/entry-point.md"],
+            ["ROADMAP_DESIGNS/a.md", "ROADMAP_DESIGNS/b.md", "ROADMAP_DESIGNS/diced/entry-point.md"],
             id="readme-excluded-diced-counted-once",
         ),
         pytest.param(["ROADMAP.md"], [], id="no-parked-directory"),

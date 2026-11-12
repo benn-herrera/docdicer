@@ -1,9 +1,10 @@
 """The reassembly check: the leaves, read in order with their Contents blocks dropped and section
 links reverted, reproduce the monolith line for line (outside links compared in rebased form)."""
 
+import os
 from typing import TextIO
 
-from .heads import CONTENTS
+from .heads import CONTENTS, HEADS
 from .linkrewrite import Linker, Tree, parent_dir
 from .outline import Outline, Section
 from .textfile import FenceTracker, fence_flags, read_lines
@@ -15,6 +16,13 @@ def contents_cut(lines: list[str]) -> int:
     while cut >= 0 and lines[cut] != CONTENTS:
         cut -= 1
     return cut
+
+
+def own_end(path: str, lines: list[str]) -> int:
+    """Where the lines of the tree file at path end as its own: at a head file's Contents block,
+    else at the file's end."""
+    cut = contents_cut(lines) if os.path.basename(path) in HEADS else -1
+    return cut if cut >= 0 else len(lines)
 
 
 def check_reassembly(sections: list[Section], lines: list[str], tree: Tree, *, out: TextIO, err: TextIO) -> bool:

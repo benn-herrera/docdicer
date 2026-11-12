@@ -35,9 +35,9 @@ _PLAN = (
 # The item to move is the last of its group, so dropping it back on the group's other card restores it.
 _ROADMAP = (
     "# Roadmap\n\n## Next\n\n1. **Alpha.** First.\n2. **Search index.** Build an index from\n"
-    "   [x](ROADMAP_PLANS/x.md#goals).\n\n## Later\n\n- Other\n"
+    "   [x](ROADMAP_DESIGNS/x.md#goals).\n\n## Later\n\n- Other\n"
 )
-_BODY = ["**Search index.** Build an index from", "   [x](ROADMAP_PLANS/x.md#goals)."]
+_BODY = ["**Search index.** Build an index from", "   [x](ROADMAP_DESIGNS/x.md#goals)."]
 _MONOLITH = {"ACTIVE_DESIGN.md": "# Design\n\n## Goals\n\nkeep\n"}
 _DICED = {
     "ACTIVE_DESIGN/entry-point.md": "# Design\n\nContents:\n\n- [Goals](goals.md)\n",
@@ -154,6 +154,75 @@ def test_design_cards(tmp_path, files, cards):
     assert all(c.parked is None for c in board.design)
 
 
+_DELTA_MONOLITH = {
+    "ACTIVE_DESIGN.md": "# D\n\n## Intro\n\nWhy.\n\n## SPEC delta\n\nstray\n\n### [§11.2](SPEC.md#x)\n\nNew row.\n\n"
+    "## Code delta\n\n### board.py\n\nKind.\n"
+}
+# The leaves' names sort against document order: the Contents block puts SPEC delta first.
+_DELTA_DICED = {
+    "ACTIVE_DESIGN/entry-point.md": "# D\n\n## Intro\n\nWhy.\n\nContents:\n\n- [SPEC delta](spec-delta.md)\n"
+    "- [Code delta](code-delta.md)\n",
+    "ACTIVE_DESIGN/spec-delta.md": "## SPEC delta\n\nstray\n\n### [§11.2](../SPEC.md#x)\n\nNew row.\n",
+    "ACTIVE_DESIGN/code-delta.md": "## Code delta\n\n### board.py\n\nKind.\n",
+}
+
+
+@pytest.mark.parametrize(
+    "files, paths",
+    [
+        pytest.param(_DELTA_MONOLITH, ["ACTIVE_DESIGN.md"] * 5, id="monolith"),
+        pytest.param(
+            _DELTA_DICED,
+            ["ACTIVE_DESIGN/entry-point.md"]
+            + ["ACTIVE_DESIGN/spec-delta.md"] * 2
+            + ["ACTIVE_DESIGN/code-delta.md"] * 2,
+            id="diced-in-document-order",
+        ),
+    ],
+)
+def test_deltas_are_separators_over_entry_cards(tmp_path, files, paths):
+    board = read_board(_project(tmp_path, files))
+    assert [(c.kind, c.title, c.text) for c in board.design] == [
+        ("section", "Intro", "Why."),
+        ("delta", "SPEC delta", ""),
+        ("entry", "§11.2", "New row."),
+        ("delta", "Code delta", ""),
+        ("entry", "board.py", "Kind."),
+    ]
+    assert [c.path for c in board.design] == paths
+
+
+@pytest.mark.parametrize("kind", ["entry", "delta"])
+def test_an_entry_card_or_separator_is_refused_on_roadmap(tmp_path, kind):
+    root = _project(tmp_path, {"ROADMAP.md": _ROADMAP, **_DELTA_MONOLITH})
+    before = _tree(tmp_path)
+    board = read_board(root)
+    card = next(c for c in board.design if c.kind == kind)
+    with pytest.raises(MoveRefused):
+        move_to_roadmap(root, asdict(card), target=None, read=board.sha256)
+    assert _tree(tmp_path) == before
+
+
+def test_a_card_titled_by_a_delta_heading_is_refused_on_design(tmp_path):
+    root = _project(tmp_path, {"ROADMAP.md": "- **SPEC delta** text\n", **_DELTA_MONOLITH})
+    before = _tree(tmp_path)
+    with pytest.raises(MoveRefused):
+        _to_design(root, "SPEC delta")
+    assert _tree(tmp_path) == before
+
+
+@pytest.mark.parametrize("design", [_DELTA_MONOLITH, _DELTA_DICED], ids=["monolith", "diced"])
+def test_a_section_moves_both_ways_in_a_design_with_deltas(tmp_path, design):
+    root = _project(tmp_path, {"ROADMAP.md": _ROADMAP, "ROADMAP_DESIGNS/x.md": "# X\n", **design})
+    before = _tree(tmp_path)
+
+    _to_design(root, "Search index")
+    assert [c.kind for c in read_board(root).design if c.title == "Search index"] == ["section"]
+    _to_roadmap(root, "Search index", target="Alpha")
+
+    assert _tree(tmp_path) == before
+
+
 def test_design_read_for_its_headings_only(tmp_path):
     design = "# Design\n\nRelease: 1.0\n\n## Status\n\n| Package | State |\n|---|---|\n| X1 | landed |\n"
     board = read_board(_project(tmp_path, {"ACTIVE_DESIGN.md": design}))
@@ -162,7 +231,7 @@ def test_design_read_for_its_headings_only(tmp_path):
 
 
 _LONG = " ".join(["word"] * 20)
-_LINKED_ITEM = "Linked design work: see [linked](ROADMAP_PLANS/linked.md)"
+_LINKED_ITEM = "Linked design work: see [linked](ROADMAP_DESIGNS/linked.md)"
 
 
 @pytest.mark.parametrize(
@@ -204,29 +273,29 @@ def test_roadmap_cards(tmp_path, roadmap, cards):
 
 def test_parked_cards(tmp_path):
     roadmap = (
-        "## Next\n\n- **Linked** see [plan](ROADMAP_PLANS/linked.md) and\n"
-        "  [tree](ROADMAP_PLANS/tree/entry-point.md#goals).\n\nSee [loose](ROADMAP_PLANS/loose.md).\n"
+        "## Next\n\n- **Linked** see [plan](ROADMAP_DESIGNS/linked.md) and\n"
+        "  [tree](ROADMAP_DESIGNS/tree/entry-point.md#goals).\n\nSee [loose](ROADMAP_DESIGNS/loose.md).\n"
     )
     files = {
         "ROADMAP.md": roadmap,
-        "ROADMAP_PLANS/README.md": "# Parked plans\n",
-        "ROADMAP_PLANS/linked.md": "# Linked\n",
-        "ROADMAP_PLANS/tree/entry-point.md": "# Tree\n",
-        "ROADMAP_PLANS/unlinked.md": "# Unlinked\n\nSee [appendix](appendix.md).\n",
-        "ROADMAP_PLANS/appendix.md": "# Appendix\n",
-        "ROADMAP_PLANS/loose.md": "# Loose\n",
+        "ROADMAP_DESIGNS/README.md": "# Parked plans\n",
+        "ROADMAP_DESIGNS/linked.md": "# Linked\n",
+        "ROADMAP_DESIGNS/tree/entry-point.md": "# Tree\n",
+        "ROADMAP_DESIGNS/unlinked.md": "# Unlinked\n\nSee [appendix](appendix.md).\n",
+        "ROADMAP_DESIGNS/appendix.md": "# Appendix\n",
+        "ROADMAP_DESIGNS/loose.md": "# Loose\n",
     }
     board = read_board(_project(tmp_path, files))
-    assert [c.parked for c in board.roadmap] == [["ROADMAP_PLANS/linked.md", "ROADMAP_PLANS/tree/entry-point.md"]]
+    assert [c.parked for c in board.roadmap] == [["ROADMAP_DESIGNS/linked.md", "ROADMAP_DESIGNS/tree/entry-point.md"]]
     assert board.parked == [
-        ParkedCard("appendix", "ROADMAP_PLANS/appendix.md"),
-        ParkedCard("loose", "ROADMAP_PLANS/loose.md"),
-        ParkedCard("unlinked", "ROADMAP_PLANS/unlinked.md"),
+        ParkedCard("appendix", "ROADMAP_DESIGNS/appendix.md"),
+        ParkedCard("loose", "ROADMAP_DESIGNS/loose.md"),
+        ParkedCard("unlinked", "ROADMAP_DESIGNS/unlinked.md"),
     ]
 
 
 def test_board_digests_every_file_a_move_may_write(tmp_path):
-    board = read_board(_project(tmp_path, {**_DICED, "ROADMAP_PLANS/later.md": "# Later\n"}))
+    board = read_board(_project(tmp_path, {**_DICED, "ROADMAP_DESIGNS/later.md": "# Later\n"}))
     assert sorted(board.sha256) == ["ACTIVE_DESIGN/entry-point.md", "ACTIVE_DESIGN/goals.md", "ROADMAP.md"]
     assert board.sha256["ROADMAP.md"] is None
 
@@ -245,7 +314,7 @@ def test_board_digests_every_file_a_move_may_write(tmp_path):
     ],
 )
 def test_roadmap_card_moves_to_design(tmp_path, design, written, section_file):
-    root = _project(tmp_path, {"ROADMAP.md": _ROADMAP, "ROADMAP_PLANS/x.md": "# X\n", **design})
+    root = _project(tmp_path, {"ROADMAP.md": _ROADMAP, "ROADMAP_DESIGNS/x.md": "# X\n", **design})
     assert _to_design(root, "Search index") == written
 
     board = read_board(root)
@@ -257,7 +326,7 @@ def test_roadmap_card_moves_to_design(tmp_path, design, written, section_file):
     assert lines[lines.index("## Search index") + 2] == _BODY[0]
     [(_, target)] = prose_links(lines[lines.index("## Search index") :])
     assert os.path.samefile(
-        (tmp_path / section_file).parent / target.partition("#")[0], tmp_path / "ROADMAP_PLANS/x.md"
+        (tmp_path / section_file).parent / target.partition("#")[0], tmp_path / "ROADMAP_DESIGNS/x.md"
     )
     if design is _DICED:
         entry = split_lines(_read(tmp_path / "ACTIVE_DESIGN/entry-point.md"))
@@ -268,7 +337,7 @@ def test_roadmap_card_moves_to_design(tmp_path, design, written, section_file):
 
 @pytest.mark.parametrize("design", [_MONOLITH, _DICED], ids=["monolith", "diced"])
 def test_round_trip_leaves_both_documents_as_they_were(tmp_path, design):
-    root = _project(tmp_path, {"ROADMAP.md": _ROADMAP, "ROADMAP_PLANS/x.md": "# X\n", **design})
+    root = _project(tmp_path, {"ROADMAP.md": _ROADMAP, "ROADMAP_DESIGNS/x.md": "# X\n", **design})
     before = _tree(tmp_path)
 
     _to_design(root, "Search index")
@@ -279,7 +348,7 @@ def test_round_trip_leaves_both_documents_as_they_were(tmp_path, design):
 
 def test_item_titled_by_a_linking_sentence_moves_to_a_diced_design_and_back(tmp_path):
     roadmap = f"## Next\n\n- First.\n- {_LINKED_ITEM}\n"
-    root = _project(tmp_path, {"ROADMAP.md": roadmap, "ROADMAP_PLANS/linked.md": "# Linked\n", **_DICED})
+    root = _project(tmp_path, {"ROADMAP.md": roadmap, "ROADMAP_DESIGNS/linked.md": "# Linked\n", **_DICED})
     before = _tree(tmp_path)
 
     _to_design(root, "Linked design work: see linked")
@@ -295,7 +364,7 @@ def test_item_titled_by_a_linking_sentence_moves_to_a_diced_design_and_back(tmp_
 
 
 def test_edited_section_returns_with_its_heading_as_bold_lead(tmp_path):
-    root = _project(tmp_path, {"ROADMAP.md": _ROADMAP, "ROADMAP_PLANS/x.md": "# X\n", **_MONOLITH})
+    root = _project(tmp_path, {"ROADMAP.md": _ROADMAP, "ROADMAP_DESIGNS/x.md": "# X\n", **_MONOLITH})
     _to_design(root, "Search index")
     design = tmp_path / "ACTIVE_DESIGN.md"
     design.write_text(_read(design).replace("**Search index.** Build", "Build"), encoding="utf-8")
@@ -304,7 +373,7 @@ def test_edited_section_returns_with_its_heading_as_bold_lead(tmp_path):
 
     lines = split_lines(_read(tmp_path / "ROADMAP.md"))
     at = lines.index("1. **Alpha.** First.") + 1
-    assert lines[at : at + 2] == ["2. **Search index** Build an index from", "      [x](ROADMAP_PLANS/x.md#goals)."]
+    assert lines[at : at + 2] == ["2. **Search index** Build an index from", "      [x](ROADMAP_DESIGNS/x.md#goals)."]
     assert _read(design) == _MONOLITH["ACTIVE_DESIGN.md"]
 
 
@@ -322,7 +391,7 @@ _GONE_CARD = {"title": "Gone", "group": "Next", "text": "1. Gone.", "parked": []
 def test_returned_item_placement_and_marker(tmp_path, target, expected):
     files = {
         "ROADMAP.md": "## Next\n\n1. One.\n\n## Later\n\n- Other\n",
-        "ROADMAP_PLANS/later.md": "# Later\n",
+        "ROADMAP_DESIGNS/later.md": "# Later\n",
         "ACTIVE_DESIGN.md": "# Design\n\n## Note\n\nText.\n",
     }
     root = _project(tmp_path, files)
@@ -373,7 +442,7 @@ def test_section_in_entry_point_moves_as_a_monolith_section(tmp_path):
 
 @pytest.mark.parametrize("design", [_MONOLITH, _DICED, {}], ids=["monolith", "diced", "created"])
 def test_parked_entry_round_trip(tmp_path, design):
-    root = _project(tmp_path, {"ROADMAP_PLANS/later.md": "# Later\n", **design})
+    root = _project(tmp_path, {"ROADMAP_DESIGNS/later.md": "# Later\n", **design})
     before = _tree(tmp_path)
 
     written = _to_design(root, "later")
@@ -381,26 +450,26 @@ def test_parked_entry_round_trip(tmp_path, design):
     assert "ROADMAP.md" not in written
     assert board.parked == []
     [card] = [c for c in board.design if c.title == "later"]
-    assert card.parked == "ROADMAP_PLANS/later.md"
+    assert card.parked == "ROADMAP_DESIGNS/later.md"
     lines = split_lines(_read(tmp_path / card.path))
     [(_, target)] = prose_links(lines)
-    assert os.path.samefile((tmp_path / card.path).parent / target, tmp_path / "ROADMAP_PLANS/later.md")
+    assert os.path.samefile((tmp_path / card.path).parent / target, tmp_path / "ROADMAP_DESIGNS/later.md")
     assert INSTRUCTION in lines
 
     assert "ROADMAP.md" not in _to_roadmap(root, "later")
-    assert read_board(root).parked == [ParkedCard("later", "ROADMAP_PLANS/later.md")]
+    assert read_board(root).parked == [ParkedCard("later", "ROADMAP_DESIGNS/later.md")]
     if design:
         assert _tree(tmp_path) == before
 
 
 def test_edited_link_section_is_an_ordinary_card(tmp_path):
-    root = _project(tmp_path, {"ROADMAP_PLANS/later.md": "# Later\n", **_MONOLITH})
+    root = _project(tmp_path, {"ROADMAP_DESIGNS/later.md": "# Later\n", **_MONOLITH})
     _to_design(root, "later")
     design = tmp_path / "ACTIVE_DESIGN.md"
     design.write_text(_read(design) + "\nDecided: yes.\n", encoding="utf-8")
     board = read_board(root)
     assert [c.parked for c in board.design if c.title == "later"] == [None]
-    assert board.parked == [ParkedCard("later", "ROADMAP_PLANS/later.md")]
+    assert board.parked == [ParkedCard("later", "ROADMAP_DESIGNS/later.md")]
 
 
 @pytest.mark.parametrize(
@@ -440,8 +509,8 @@ def test_move_to_roadmap_refused_where_a_file_changed(tmp_path, changed):
 @pytest.mark.parametrize(
     "card",
     [
-        pytest.param(ParkedCard("gone", "ROADMAP_PLANS/gone.md"), id="parked"),
-        pytest.param(DesignCard("Gone", "", "ACTIVE_DESIGN.md", None), id="design"),
+        pytest.param(ParkedCard("gone", "ROADMAP_DESIGNS/gone.md"), id="parked"),
+        pytest.param(DesignCard("Gone", "", "ACTIVE_DESIGN.md", None, "section"), id="design"),
     ],
 )
 def test_move_refused_where_the_card_is_gone(tmp_path, card):
@@ -493,7 +562,7 @@ def test_a_diced_designs_new_leaf_takes_the_section_name_of_its_title(tmp_path, 
 
 
 def test_a_diced_design_without_a_contents_block_gains_one(tmp_path):
-    files = {"ROADMAP.md": _ROADMAP, "ROADMAP_PLANS/x.md": "# X\n", "ACTIVE_DESIGN/entry-point.md": "# Design\n"}
+    files = {"ROADMAP.md": _ROADMAP, "ROADMAP_DESIGNS/x.md": "# X\n", "ACTIVE_DESIGN/entry-point.md": "# Design\n"}
     root = _project(tmp_path, files)
     _to_design(root, "Search index")
     entry = split_lines(_read(tmp_path / "ACTIVE_DESIGN/entry-point.md"))
@@ -510,6 +579,7 @@ def test_a_diced_design_without_a_contents_block_gains_one(tmp_path):
 )
 def test_a_leaf_whose_contents_line_is_not_found_is_not_moved(tmp_path, entry):
     files = {"ACTIVE_DESIGN/entry-point.md": entry, "ACTIVE_DESIGN/risks.md": "## Risks\n\nText.\n"}
+    files["ACTIVE_DESIGN/goals.md"] = "## Goals\n"  # a Contents link is read: one to no file fails the read
     root = _project(tmp_path, files)
     before = _tree(tmp_path)
     with pytest.raises(MoveRefused):
