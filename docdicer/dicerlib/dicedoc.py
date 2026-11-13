@@ -6,9 +6,10 @@ import posixpath
 from typing import Optional, TextIO
 
 from .heads import ENTRY_POINT, HEADS
-from .linkcheck import check_links, heading_anchor_list, markdown_files
-from .linkrewrite import Linker, LinkMap, Tree, link_targets, parent_dir
-from .outline import Outline, Section, plan_sections
+from .linkcheck import check_links, markdown_files
+from .linkrewrite import Linker, LinkMap, Tree, parent_dir
+from .linkscan import link_targets
+from .outline import DEEPEST_SPLIT_LEVEL, Outline, Section, plan_sections
 from .reassemble import check_reassembly, own_end
 from .split import write_tree
 from .textfile import FenceTracker, read_lines, split_lines, write_lines
@@ -25,9 +26,12 @@ def _tree(out: str, map_path: str) -> Tree:
     return Tree(out=out, outabs=os.path.realpath(out), root=os.getcwd(), link_map=link_map)
 
 
-def dice_doc(monolith: str, out: str, map_path: str, *, stdout: TextIO, stderr: TextIO) -> int:
-    """Split a monolith into a tree under out (empty or absent), then check that the tree
-    reassembles the monolith and that its links resolve. 0 ok, 1 a failed step, 2 bad arguments."""
+def dice_doc(
+    monolith: str, out: str, map_path: str, *, stdout: TextIO, stderr: TextIO, deepest: int = DEEPEST_SPLIT_LEVEL
+) -> int:
+    """Split a monolith at headings of level 2 to deepest into a tree under out (empty or absent),
+    then check that the tree reassembles the monolith and that its links resolve. 0 ok, 1 a failed
+    step, 2 bad arguments."""
     if not os.path.isfile(monolith):
         print(f"not a file: {monolith}", file=stderr)
         return 2
@@ -43,7 +47,7 @@ def dice_doc(monolith: str, out: str, map_path: str, *, stdout: TextIO, stderr: 
     os.makedirs(out, exist_ok=True)
     tree = _tree(out, map_path)
     lines = read_lines(monolith)
-    sections, ok = plan_sections(lines, err=stderr)
+    sections, ok = plan_sections(lines, err=stderr, deepest=deepest)
     if not ok:
         return 1
     _warn_duplicate_numbers(sections, err=stderr)
@@ -62,8 +66,9 @@ def _own_and_contents(out: str, path: str) -> tuple[list[str], list[str]]:
     return lines[:end], lines[end:]
 
 
-def _undiced_lines(tree: Tree, *, err: TextIO) -> tuple[list[str], bool, list[tuple[str, Optional[int]]]]:
-    """The entry point, then each file its Contents block lists, Contents dropped, links restored;
+def _undiced_lines(tree: Tree, *, err: TextIO, deepest: int) -> tuple[list[str], bool, list[tuple[str, Optional[int]]]]:
+    """The entry point, then each file its Contents block lists, Contents dropped, links restored
+    at split level deepest;
     whether every listed file could be read (each that could not is reported to err); and, for
     every read in reading order, its normalized path and the 1-based line of the result its own
     lines start at, None when it holds none."""
@@ -77,15 +82,7 @@ def _undiced_lines(tree: Tree, *, err: TextIO) -> tuple[list[str], bool, list[tu
             except OSError:
                 print(f"undice: cannot read {tree.out}/{path}", file=err)
                 all_read = False
-    # Headings read from the tree hold rewritten links, which change their slugs and anchors; each
-    # pass plans from the previous one's output, so a chain of headings citing headings settles one
-    # link per pass.
-    lines = [line for _, own in parts for line in own]
-    for _ in range(len(heading_anchor_list(lines)) + 1):
-        restored = _restored(parts, tree, lines)
-        if restored == lines:
-            break
-        lines = restored
+    lines = _restored(parts, tree, [line for _, own in parts for line in own], deepest=deepest)
     reads = []
     first = 1 + len(entry)
     for path, own in parts[1:]:
@@ -94,9 +91,10 @@ def _undiced_lines(tree: Tree, *, err: TextIO) -> tuple[list[str], bool, list[tu
     return lines, all_read, reads
 
 
-def _restored(parts: list[tuple[str, list[str]]], tree: Tree, lines: list[str]) -> list[str]:
-    """The parts' own lines with links restored against the sections and headings of lines."""
-    sections, _ = plan_sections(lines, err=io.StringIO())
+def _restored(parts: list[tuple[str, list[str]]], tree: Tree, lines: list[str], *, deepest: int) -> list[str]:
+    """The parts' own lines with links restored against the sections, split at level 2 to deepest,
+    and headings of lines."""
+    sections, _ = plan_sections(lines, err=io.StringIO(), deepest=deepest)
     linker = Linker(Outline(sections), tree, lines)
     restored = []
     for path, own in parts:
@@ -106,7 +104,14 @@ def _restored(parts: list[tuple[str, list[str]]], tree: Tree, lines: list[str]) 
     return restored
 
 
-def _all_reproduced(out: str, sections: list[Section], reads: list[tuple[str, Optional[int]]], *, err: TextIO) -> bool:
+def _all_reproduced(
+    out: str,
+    sections: list[Section],
+    reads: list[tuple[str, Optional[int]]],
+    *,
+    err: TextIO,
+    deepest: int,
+) -> bool:
     """Report each `.md` under out that the sections do not write, nested volumes aside, naming the
     remedy: a file read as a section is renamed or its heading edited, a file read that opens none
     gets a heading or is removed, any other is linked or removed.
@@ -135,7 +140,7 @@ def _all_reproduced(out: str, sections: list[Section], reads: list[tuple[str, Op
             )
         elif rel in read:
             print(
-                f"undice: {f} opens no section: start it with a level 2 to 4 heading, or remove it and its Contents line",
+                f"undice: {f} opens no section: start it with a level 2 to {deepest} heading, or remove it and its Contents line",
                 file=err,
             )
         else:
@@ -146,9 +151,10 @@ def _all_reproduced(out: str, sections: list[Section], reads: list[tuple[str, Op
     return not strays
 
 
-def undice(out: str, monolith: str, *, stdout: TextIO, stderr: TextIO) -> int:
-    """Write the document the tree under out holds to monolith, which must not exist, then check
-    that dicing it reproduces the tree. 0 ok, 1 a failed check, 2 bad arguments."""
+def undice(out: str, monolith: str, *, stdout: TextIO, stderr: TextIO, deepest: int = DEEPEST_SPLIT_LEVEL) -> int:
+    """Write the document the tree under out, diced at headings of level 2 to deepest, holds to
+    monolith, which must not exist, then check that dicing it at deepest reproduces the tree. 0 ok,
+    1 a failed check, 2 bad arguments."""
     try:
         read_lines(os.path.join(out, ENTRY_POINT))
     except OSError:
@@ -158,13 +164,13 @@ def undice(out: str, monolith: str, *, stdout: TextIO, stderr: TextIO) -> int:
         print(f"{monolith} exists: name another output, or move or delete it", file=stderr)
         return 2
     tree = _tree(out, "")
-    lines, all_read, reads = _undiced_lines(tree, err=stderr)
+    lines, all_read, reads = _undiced_lines(tree, err=stderr, deepest=deepest)
     try:
         write_lines(monolith, lines)
     except OSError:
         print(f"cannot write: {monolith}", file=stderr)
         return 2
-    sections, planned = plan_sections(lines, err=stderr)
+    sections, planned = plan_sections(lines, err=stderr, deepest=deepest)
     if not planned:
         return 1
     _warn_duplicate_numbers(sections, err=stderr)
@@ -172,7 +178,7 @@ def undice(out: str, monolith: str, *, stdout: TextIO, stderr: TextIO) -> int:
         all_read,
         check_reassembly(sections, lines, tree, out=stdout, err=stderr),
         check_links(sections, tree, out=stdout, err=stderr),
-        _all_reproduced(out, sections, reads, err=stderr),
+        _all_reproduced(out, sections, reads, err=stderr, deepest=deepest),
     ]
     return 0 if all(checks) else 1
 
@@ -185,9 +191,11 @@ def _leaf_count(out: str) -> int:
     return count
 
 
-def verify(map_path: str, pairs: list[tuple[str, str]], *, stdout: TextIO, stderr: TextIO) -> int:
-    """Re-run the reassembly and link checks on each (monolith, out) tree, once every tree a link
-    points into exists. 0 when every check passes, else 1."""
+def verify(
+    map_path: str, pairs: list[tuple[str, str]], *, stdout: TextIO, stderr: TextIO, deepest: int = DEEPEST_SPLIT_LEVEL
+) -> int:
+    """Re-run the reassembly and link checks on each (monolith, out) tree, diced at headings of
+    level 2 to deepest, once every tree a link points into exists. 0 when every check passes, else 1."""
     rc = 0
     for monolith, out in pairs:
         if not os.path.isdir(out):
@@ -202,7 +210,7 @@ def verify(map_path: str, pairs: list[tuple[str, str]], *, stdout: TextIO, stder
             print(f"cannot read: {monolith}", file=stderr)
             rc = 1
             continue
-        sections, ok = plan_sections(lines, err=stderr)
+        sections, ok = plan_sections(lines, err=stderr, deepest=deepest)
         _warn_duplicate_numbers(sections, err=stderr)
         if not ok:
             rc = 1

@@ -1,0 +1,6 @@
+stdout	doc.md	out
+stdout	3	out/entry-point.md
+stdout	want	1-one/1.1-sub/detail.md
+stdout	got	1-one.md#detail
+stdout	4	0
+stdout	2

@@ -3,9 +3,8 @@
 Manifest rows are tab separated (blank lines and lines starting with # skipped):
   file    source file name, relative to the source directory; documents link to it by this name
   outdir  output directory
-  flags   comma list, may be empty: refactor (run-ins to headings), items (bold list items too),
-          entry (the file, verbatim, becomes <outdir>/entry-point.md followed by a list of the
-          volumes directly under <outdir>; the file itself is not diced)
+  flags   comma list, may be empty: entry (the file, verbatim, becomes <outdir>/entry-point.md
+          followed by a list of the volumes directly under <outdir>; the file itself is not diced)
   label   for a volume nested as <parent volume>/<group>/<name>: the group's title, used for
           <parent>/<group>/index.md and the line added to <parent>/entry-point.md
 """
@@ -13,25 +12,20 @@ Manifest rows are tab separated (blank lines and lines starting with # skipped):
 import io
 import os
 import posixpath
-import re
 import shutil
-from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Optional, TextIO
 
 from .dicedoc import dice_doc, verify
-from .heads import CONTENTS, ENTRY_POINT, INDEX
+from .heads import CONTENTS, ENTRY_POINT, INDEX, contents_line
+from .linkscan import link_targets, plain_text
 from .outline import plan_sections
-from .refactor import refactor
-from .textfile import append_text, read_lines, read_text, terminated_lines, write_lines, write_text
-
-_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
-_MD_LINK_TARGET = re.compile(r"\]\(([^)#]*\.md)\)")
+from .textfile import append_text, fence_flags, read_lines, read_text, terminated_lines, write_lines, write_text
 
 
 @dataclass
 class _Volume:
-    monolith: str  # the file diced: the source, or its refactored copy in the work directory
+    monolith: str
     out: str
     label: str
     file: str
@@ -71,14 +65,15 @@ def _remove(path: str) -> None:
 
 
 def _title(monolith: str) -> str:
+    """The plain text of the first `# ` heading, without its surrounding spaces."""
     for line in read_lines(monolith):
         if line.startswith("# "):
-            return line[2:]
+            return plain_text(line[1:].strip(" "))
     return ""
 
 
 def _purpose(monolith: str) -> str:
-    """First sentence of the paragraph after the title, links reduced to their text."""
+    """First sentence of the paragraph after the title, as plain text."""
     paragraph: list[str] = []
     started = False
     for line in read_lines(monolith):
@@ -88,7 +83,7 @@ def _purpose(monolith: str) -> str:
             paragraph.append(line)
         elif paragraph:
             break
-    text = _LINK.sub(r"\1", " ".join(paragraph))
+    text = plain_text(" ".join(paragraph))
     end = text.find(". ")
     return text[: end + 1] if end >= 0 else text
 
@@ -121,8 +116,10 @@ def _write_group_indexes(volumes: list[_Volume]) -> list[str]:
         if index not in written:
             write_text(index, f"# {v.label}\n\n{CONTENTS}\n\n")
             written.append(index)
-            append_text(f"{_dirname(group)}/{ENTRY_POINT}", f"- [{v.label}]({_basename(group)}/{INDEX})\n")
-        append_text(index, f"- [{_title(v.monolith)}]({_basename(v.out)}/{ENTRY_POINT})\n")
+            group_line = contents_line("", text=v.label, path=f"{_basename(group)}/{INDEX}")
+            append_text(f"{_dirname(group)}/{ENTRY_POINT}", group_line + "\n")
+        volume_line = contents_line("", text=_title(v.monolith), path=f"{_basename(v.out)}/{ENTRY_POINT}")
+        append_text(index, volume_line + "\n")
     return written
 
 
@@ -141,19 +138,21 @@ def _check_written(files: list[str], *, out: TextIO) -> bool:
     ok = True
     for f in files:
         here = _dirname(f)
-        for line in read_lines(f):
-            for target in _MD_LINK_TARGET.findall(line):
-                if not os.path.isfile(f"{here}/{target}"):
-                    print(f"  DEAD {f} -> {target}", file=out)
-                    ok = False
+        lines = read_lines(f)
+        prose = [line for line, fenced in zip(lines, fence_flags(lines)) if not fenced]
+        for target in (t for line in prose for t in link_targets(line)):
+            if target.endswith(".md") and "#" not in target and not os.path.isfile(f"{here}/{target}"):
+                print(f"  DEAD {f} -> {target}", file=out)
+                ok = False
         print(f"  checked {f}", file=out)
     return ok
 
 
-def dice_docs(manifest: str, src: str, work: str, *, keep: Iterable[str], stdout: TextIO, stderr: TextIO) -> int:
-    """Refactor where flagged, build the link map, dice each volume, write group indexes and the
-    entry point, then verify every tree. Output directories not nested in another output are
-    removed first; parents must precede children in the manifest."""
+def dice_docs(manifest: str, src: str, work: str, *, stdout: TextIO, stderr: TextIO) -> int:
+    """Build the link map, dice each volume, write group indexes and the entry point, then verify
+    every tree. Output directories not nested in another output are removed first; parents must
+    precede children in the manifest. A row flagged with anything but `entry` ends the command,
+    exit 2, before anything is written."""
     if not os.path.isfile(manifest):
         print(f"not a file: {manifest}", file=stderr)
         return 2
@@ -169,17 +168,15 @@ def dice_docs(manifest: str, src: str, work: str, *, keep: Iterable[str], stdout
         if not os.path.isfile(source):
             print(f"missing source: {source}", file=stderr)
             return 2
-        flag_set = flags.split(",")
-        if "entry" in flag_set:
+        flag_list = flags.split(",")
+        unknown = [flag for flag in flag_list if flag not in ("", "entry")]
+        if unknown:
+            print(f"unknown flag: {unknown[0]} in row for {file} (the only flag is entry)", file=stderr)
+            return 2
+        if "entry" in flag_list:
             entry = _Entry(out, source)
             continue
-        monolith = source
-        if "refactor" in flag_set:
-            monolith = f"{work}/{file}"
-            rc = refactor(source, monolith, items="items" in flag_set, keep=keep, out=stdout, err=stderr)
-            if rc:
-                return rc
-        volumes.append(_Volume(monolith, out, label, file))
+        volumes.append(_Volume(source, out, label, file))
 
     map_path = f"{work}/links.tsv"
     write_lines(map_path, _link_map_rows(volumes, entry, err=stderr))

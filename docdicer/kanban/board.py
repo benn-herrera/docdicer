@@ -1,89 +1,131 @@
 """The kanban board's model: a project's roadmap, active design and active plan as columns of cards;
-and the board's only writes to documents, the moves of an entry between `ROADMAP.md` and the active
-design.
+and the board's only writes to documents, the moves of a ticket between `ROADMAP.md` and the active
+design, a monolith or a diced tree.
 
-A document is a list of lines and its structure line ranges: a move splices lines out of one file
-and into another. Plain data over the project's files: nothing here serves, keeps UI state or reads
-git.
+A document is a list of lines and its parts line ranges, as `planform` reads them in the ticket
+layout: a move splices a ticket's lines out of one file and into another, rebasing their relative
+links between the two files' directories; in a diced design it may add a leaf or delete one, with
+its Contents lines. Plain data over the project's files: nothing here serves, keeps UI state or
+reads git.
 """
 
 import hashlib
 import os
 import posixpath
 import re
-from dataclasses import asdict, dataclass
-from typing import Any, Optional
+from collections.abc import Callable, Sequence
+from dataclasses import asdict, dataclass, replace
+from typing import Any, Optional, TypeVar, Union
+from urllib.parse import quote
 
-from ..dicerlib.heads import CONTENTS, ENTRY_POINT, HEADS
+from ..dicerlib.heads import CONTENTS, ENTRY_POINT, HEADS, INDEX, contents_line
 from ..dicerlib.linkcheck import markdown_files, prose_links
-from ..dicerlib.linkrewrite import link_targets, never_rebased, rel, scan
-from ..dicerlib.outline import section_name
+from ..dicerlib.linkrewrite import never_rebased, rel
+from ..dicerlib.linkscan import link_targets, scan
+from ..dicerlib.outline import contents_text, section_name, split_number
 from ..dicerlib.reassemble import contents_cut
-from ..dicerlib.textfile import fence_flags, is_blank, read_text, replace_lines, split_lines
+from ..dicerlib.textfile import fence_flags, is_blank, read_text, replace_lines
 from .planform import (
     ACTIVE_DESIGN,
     ACTIVE_PLAN,
+    CATEGORY,
     DELTA,
-    DELTA_HEADINGS,
     DRAFTED,
-    ENTRY,
     HEADING,
+    LAYOUT_BREACHES,
     ROADMAP,
-    SECTION,
     STATE_WORDS,
-    DesignPart,
+    TICKET,
+    Breach,
+    ParkedWork,
+    Part,
     WorkPackage,
     active_document,
     design_files,
     design_from_files,
-    parked_entries,
+    document_paths,
+    parked_work,
+    read_file,
     read_plan,
+    roadmap_file,
+    roadmap_from_file,
 )
 
 # The plan columns, left to right; a work package's card is in the column its state names.
 PLAN_COLUMNS = (DRAFTED, *STATE_WORDS)
-TITLE_LENGTH = 60  # a roadmap title taken from a first sentence is cut to this many characters
 INSTRUCTION = "complete and update this design"
 CREATED_DESIGN_HEADING = "# ACTIVE DESIGN"
+CREATED_ROADMAP_HEADING = "# ROADMAP"
+GENERAL_HEADING = "## General"
+DRAFTS = "Drafts"  # the heading text of the design's category that a move to Design adds to
+DRAFTS_DIRECTORY = "drafts"  # made beside a diced design's entry point for a `## Drafts` it lacks
 
-_ITEM = re.compile(r"(?:[-*]|[0-9]+\.)[ \t]+")
-_LIST_LINE = re.compile(r"[ \t]*(?:[-*]|[0-9]+\.)[ \t]")
-_BOLD_LEAD = re.compile(r"\*\*(.+?)\*\*")
-_SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
 _GONE = "the card is no longer on the board"
+_ITEM = re.compile(r" *[-*+] ")  # a list item, as a Contents block's lines are
+
+# A file a move writes, as (path, lines); lines is None for a leaf the move deletes.
+_Change = tuple[str, Optional[list[str]]]
 
 
 @dataclass
 class RoadmapCard:
-    title: str
-    group: str  # the `##` heading above the item; "" where there is none
-    text: str  # the item's lines as written, newline-joined
-    parked: list[str]  # the parked entries the item links, relative to the project root
+    title: str  # the Part's
+    text: str  # the lines below its heading, blank lines at either end dropped; "" for a separator
+    href: Optional[str]  # the URL path of the file holding its heading, then `#` and its anchor; None for a separator
+    parked: list[str]  # the files of the parked work the ticket links, relative to the project root
+    kind: str  # the Part's: CATEGORY (drawn as a separator) or TICKET
+    occurrence: int  # the number of cards before it in Board.roadmap equal to it in every other field
 
 
 @dataclass
 class ParkedCard:
-    title: str  # the entry's file name, or a diced entry's directory name, without `.md`
-    path: str  # relative to the project root
+    title: str  # the piece of parked work's parked name
+    paths: list[str]  # its files, relative to the project root
+    hrefs: list[str]  # the URL path of each of paths, in the same order
 
 
 @dataclass
 class DesignCard:
-    title: str  # the part's heading; an entry's with each link reduced to its text
-    text: str  # the lines below its heading, blank lines at either end dropped; "" for a delta
+    title: str  # the Part's
+    text: str  # as RoadmapCard's
     path: str  # the file holding the part, relative to the project root
-    parked: Optional[str]  # the parked entry's path where the section is its link section; else None
-    kind: str  # the DesignPart's: SECTION, DELTA (drawn as a separator) or ENTRY
+    href: Optional[str]  # as RoadmapCard's
+    parked: Optional[list[str]]  # the parked work's files where the ticket is its link ticket; else None
+    parked_hrefs: Optional[list[str]]  # the URL path of each of parked, in the same order; None where it is
+    kind: str  # the Part's: CATEGORY or DELTA (drawn as separators), TICKET or ENTRY
+    occurrence: int  # as RoadmapCard's, in Board.design
+
+
+@dataclass
+class PackageCard(WorkPackage):
+    """A work package's fields, flat, and its card's link."""
+
+    href: str  # as RoadmapCard's, to its heading; untitled, the URL path of the file holding its row
+
+
+_Card = TypeVar("_Card", RoadmapCard, DesignCard)
+
+
+@dataclass
+class Notice:
+    """A breach of `ROADMAP.md`, or of the active design's layout, as the page shows it."""
+
+    column: str  # the Board field whose cards it heads: "roadmap" or "design"
+    path: str  # relative to the project root
+    line: int  # 1-based
+    found: str
+    accepted: str
 
 
 @dataclass
 class Board:
     release: Optional[str]  # the active plan's; None where it names none or there is no active plan
     hardening: bool
-    roadmap: list[RoadmapCard]
-    parked: list[ParkedCard]  # parked entries neither linked nor in the design, below the roadmap cards
-    design: list[DesignCard]  # one per part of the design: sections, separators and entries, in document order
-    packages: list[WorkPackage]  # the active plan's work packages, each in the column its state names
+    roadmap: list[RoadmapCard]  # one per part of ROADMAP.md, separators included, in document order
+    parked: list[ParkedCard]  # parked work neither linked nor in the design, below the roadmap cards
+    design: list[DesignCard]  # one per part of the design, separators included, in document order
+    packages: list[PackageCard]  # the active plan's work packages, each in the column its state names
+    notices: list[Notice]  # the breaches of ROADMAP.md, then the layout breaches of the design
     sha256: dict[str, Optional[str]]  # each file a move may write, relative to the root: its digest, None if absent
 
 
@@ -101,34 +143,20 @@ class MoveWriteFailed(Exception):
 
 
 @dataclass
-class _Item:
-    card: RoadmapCard
-    group_line: Optional[int]  # 0-based line of the item's `##` heading
-    first: int  # 0-based, inclusive
-    last: int
-    marker: str  # the list marker with the whitespace after it
-
-
-@dataclass
-class _Section:
-    card: DesignCard
-    path: str  # the file holding it, as active_document and design_files name it
-    first: int  # 0-based line of its heading
-    end: int  # 0-based, exclusive
-
-
-@dataclass
 class _Read:
-    """One read of the roadmap and the active design: their cards and the line ranges a move splices."""
+    """One read of the roadmap and the active design: their parts, the card of each part, and the
+    lines a move splices."""
 
-    roadmap: list[str]
-    items: list[_Item]
-    eof_group: Optional[int]  # the `##` heading line in effect at the end of ROADMAP.md
+    roadmap: list[str]  # ROADMAP.md's lines; [] where it is absent
+    roadmap_parts: list[Part]
+    roadmap_cards: list[RoadmapCard]  # one per roadmap part, in the same order
     parked: list[ParkedCard]
     design: Optional[str]  # the active design's file: the monolith or the tree's entry point
     diced: bool  # the active design is a diced tree
-    lines: dict[str, list[str]]  # each design file's lines
-    sections: list[_Section]
+    lines: dict[str, list[str]]  # each design file's lines, in design_files order
+    design_parts: list[Part]
+    design_cards: list[DesignCard]  # one per design part, in the same order
+    notices: list[Notice]
     sha256: dict[str, Optional[str]]
 
 
@@ -140,10 +168,11 @@ def read_board(root: str) -> Board:
     return Board(
         release=plan.release if plan else None,
         hardening=plan.hardening if plan else False,
-        roadmap=[item.card for item in now.items],
+        roadmap=now.roadmap_cards,
         parked=now.parked,
-        design=[s.card for s in now.sections],
-        packages=plan.packages if plan else [],
+        design=now.design_cards,
+        packages=[_package_card(root, p) for p in plan.packages] if plan else [],
+        notices=now.notices,
         sha256=now.sha256,
     )
 
@@ -152,61 +181,69 @@ def watched_files(root: str) -> list[str]:
     """Every file the board reads, or would read were it there, so that its creation is seen too;
     each path normalized."""
     paths = [os.path.join(root, name) for name in (ROADMAP, ACTIVE_DESIGN, ACTIVE_PLAN)]
-    paths.append(os.path.join(root, os.path.splitext(ACTIVE_DESIGN)[0], ENTRY_POINT))
     for monolith in (ACTIVE_DESIGN, ACTIVE_PLAN):
         tree = os.path.join(root, os.path.splitext(monolith)[0])
         if os.path.isdir(tree):
             paths.extend(markdown_files([tree]))
-    paths.extend(parked_entries(root))
+    paths.extend(f for work in parked_work(root) for f in work.files)
     return [os.path.normpath(p) for p in paths]
 
 
+def served_files(root: str) -> list[str]:
+    """The files the board reads, sorted, each relative to root and `/`-separated: `ROADMAP.md`,
+    the active design's and the active plan's files in the form read, and the parked work's files.
+    Reads none of them."""
+    paths = [p for p in [roadmap_file(root)] if p is not None]
+    for monolith in (ACTIVE_DESIGN, ACTIVE_PLAN):
+        document = active_document(root, monolith)
+        if document:
+            paths += document_paths(document)
+    paths += [f for work in parked_work(root) for f in work.files]
+    return sorted({root_relative(root, p) for p in paths})
+
+
 def move_to_design(root: str, card: dict[str, Any], *, read: dict[str, Optional[str]]) -> list[str]:
-    """Move the entry of card, a roadmap or parked card as served, into the active design as a `##`
-    section headed by its title: a roadmap item leaves `ROADMAP.md`, a parked entry gets a link
-    section. Returns the files written, relative to root, in the order written, the addition first.
+    """Move the ticket of card, a roadmap ticket's or a parked card as served, to the end of the
+    active design's `## Drafts` category: a roadmap ticket's lines leave `ROADMAP.md`, a parked card's
+    work gets a link ticket. In a diced design whose `## Drafts` opens an `index.md`, or that has
+    none, the ticket is a new leaf, listed in the Contents blocks that list its directory. Returns the
+    files written, relative to root, in the order written, the addition first.
 
     read is the `Board.sha256` the move is made against. Raises MoveRefused, writing nothing, where
-    card's title is a delta heading's text, no card of a fresh read of the files equals card, a file
-    to write differs from read, or a diced design's new leaf has no name or already exists;
-    MoveWriteFailed where a write fails. Raises OSError where a file the move reads cannot be read.
+    no card of a fresh read of the files equals card, a leaf to add has no name, a file to create
+    exists, or a file to write differs from read; MoveWriteFailed where a write fails. Raises OSError
+    where a file the move reads cannot be read.
     """
-    if card.get("title") in DELTA_HEADINGS:
-        raise MoveRefused(f"{card['title']!r} is a delta heading: a section headed by it would be a delta, not a card")
     now = _read(root)
-    item = next((i for i in now.items if asdict(i.card) == card), None)
+    at = _ticket_at(now.roadmap_cards, card)
     parked = next((p for p in now.parked if asdict(p) == card), None)
-    if item is None and parked is None:
+    if at is None and parked is None:
         raise MoveRefused(_GONE)
-    here = _directory(root, now.design) if now.design else ""
-    if item is not None:
-        title = item.card.title
-        first, *rest = now.roadmap[item.first : item.last + 1]
-        body = _rebased([first[len(item.marker) :], *rest], "", here)
-    else:
-        title = parked.title
-        body = _link_body(parked.path, here)
-    section = [f"## {title}", "", *body]
-    changes: list[tuple[str, Optional[list[str]]]] = []
+    title = now.roadmap_parts[at].title if at is not None else parked.title
+
+    def ticket(path: str) -> list[str]:
+        """The ticket's lines for the file at path."""
+        here = _directory(root, path)
+        if at is None:
+            return _link_ticket(parked.title, parked.paths, here)
+        part = now.roadmap_parts[at]
+        return _rebased(now.roadmap[part.first : part.last + 1], "", here)
+
+    drafts = f"## {DRAFTS}"
+    head = next((k for k, p in enumerate(now.design_parts) if p.kind == CATEGORY and p.heading == DRAFTS), None)
+    changes: list[_Change]
     if now.design is None:
-        changes.append((os.path.join(root, ACTIVE_DESIGN), [CREATED_DESIGN_HEADING, "", *section]))
-    elif not now.diced:
-        lines = now.lines[now.design]
-        changes.append((now.design, [*lines, *([""] if lines and not is_blank(lines[-1]) else []), *section]))
+        created = os.path.join(root, ACTIVE_DESIGN)
+        changes = [(created, _appended([CREATED_DESIGN_HEADING], drafts, ticket(created)))]
+    elif head is not None and not _opens_an_index(now, head):
+        path = now.design_parts[head].path
+        changes = [(path, _added(now.lines[path], _category(now.design_parts, head), ticket(path)))]
+    elif now.diced:
+        changes = _new_leaf(root, now, head, title, ticket)
     else:
-        name = section_name(title)
-        if not name:
-            raise MoveRefused(
-                f"no leaf name for {title!r}: a title without a number needs an ASCII letter or digit to name"
-                " the design's new leaf"
-            )
-        leaf = os.path.join(os.path.dirname(now.design), f"{name}.md")
-        if os.path.lexists(leaf):
-            raise MoveRefused(f"{root_relative(root, leaf)} already exists")
-        contents_line = f"- [{title}]({name}.md)"
-        changes += [(leaf, section), (now.design, _with_contents_line(now.lines[now.design], contents_line))]
-    if item is not None:
-        changes.append((os.path.join(root, ROADMAP), now.roadmap[: item.first] + now.roadmap[item.last + 1 :]))
+        changes = [(now.design, _appended(now.lines[now.design], drafts, ticket(now.design)))]
+    if at is not None:
+        changes.append((os.path.join(root, ROADMAP), _removed(now.roadmap, now.roadmap_parts[at])))
     return _write(root, changes, read)
 
 
@@ -217,37 +254,41 @@ def move_to_roadmap(
     target: Optional[dict[str, Any]],
     read: dict[str, Optional[str]],
 ) -> list[str]:
-    """Move the section of card, a design card as served, out of the active design and, unless it
-    is a link section, into `ROADMAP.md` as a top-level item at the end of the `##` group of target,
-    the roadmap card dropped on as served, else at the end of the file. An unchanged section returns
-    as the item it was; any other gives its heading as the item's bold lead. Returns, refuses and
-    fails as move_to_design does; refuses too where card is not a section's, before any read, and
-    where the Contents line of a leaf to delete is not found.
+    """Move the ticket of card, a design ticket's card as served, out of the active design and,
+    unless it is a link ticket, into `ROADMAP.md` at the end of the category of target, the roadmap
+    separator the drop selected as served, else of the first category; where `ROADMAP.md` has no
+    category, under a `## General` appended to it. A diced design's leaf holding only the ticket is
+    deleted, its lines in the Contents blocks that list it removed first. Returns and fails as
+    move_to_design does; raises MoveRefused, writing nothing, where card is not a ticket's (before
+    any read), no card of a fresh read equals card, the ticket runs on past its file, a leaf to
+    delete is not listed by its directory's head, or a file to write differs from read.
     """
-    if card.get("kind") != SECTION:
-        raise MoveRefused("an entry card or a delta's separator does not move to Roadmap; only a design section does")
+    if card.get("kind") != TICKET:
+        raise MoveRefused("an entry card or a separator does not move to Roadmap; only a design ticket's card does")
     now = _read(root)
-    section = next((s for s in now.sections if asdict(s.card) == card), None)
-    if section is None:
+    at = _ticket_at(now.design_cards, card)
+    if at is None:
         raise MoveRefused(_GONE)
-    lines = now.lines[section.path]
-    changes: list[tuple[str, Optional[list[str]]]] = []
-    if section.card.parked is None:
-        body = _rebased(_trimmed(lines[section.first + 1 : section.end]), _directory(root, section.path), "")
-        target_item = next((i for i in now.items if asdict(i.card) == target), None) if target is not None else None
-        changes.append((os.path.join(root, ROADMAP), _roadmap_with(now, section.card.title, body, target_item)))
-    if now.diced and _is_whole_leaf(section, lines, now.design):
-        entry_lines = _without_contents_line(now.lines[now.design], os.path.basename(section.path))
-        if entry_lines is None:
-            raise MoveRefused(
-                f"{root_relative(root, now.design)} has no Contents line linking {root_relative(root, section.path)}"
-            )
-        changes += [(now.design, entry_lines), (section.path, None)]
-    else:
-        remaining = lines[: section.first] + lines[section.end :]
-        if section.end == len(lines) and remaining and is_blank(remaining[-1]):
-            remaining.pop()
-        changes.append((section.path, remaining))
+    part = now.design_parts[at]
+    lines = now.lines[part.path]
+    if part.runs_on:
+        raise MoveRefused(
+            f"the ticket {part.title} runs on past {root_relative(root, part.path)} into the next file of the"
+            " design; move it with its continuation into one file first"
+        )
+    changes: list[_Change] = []
+    if now.design_cards[at].parked is None:
+        ticket = _rebased(lines[part.first : part.last + 1], _directory(root, part.path), "")
+        heads = [k for k, c in enumerate(now.roadmap_cards) if c.kind == CATEGORY]
+        if now.sha256[ROADMAP] is None:
+            added = _appended([CREATED_ROADMAP_HEADING], GENERAL_HEADING, ticket)
+        elif not heads:
+            added = _appended(now.roadmap, GENERAL_HEADING, ticket)
+        else:
+            head = next((k for k in heads if asdict(now.roadmap_cards[k]) == target), heads[0])
+            added = _added(now.roadmap, _category(now.roadmap_parts, head), ticket)
+        changes.append((os.path.join(root, ROADMAP), added))
+    changes += _ticket_removed(root, now, part)
     return _write(root, changes, read)
 
 
@@ -268,17 +309,22 @@ def _directory(root: str, path: str) -> str:
 
 
 def _read(root: str) -> _Read:
-    digests: dict[str, Optional[str]] = {}
-    roadmap_path = os.path.join(root, ROADMAP)
+    digests: dict[str, Optional[str]] = {ROADMAP: None}
+    notices: list[Notice] = []
+    roadmap_path = roadmap_file(root)
     roadmap: list[str] = []
-    digests[ROADMAP] = None
-    if os.path.isfile(roadmap_path):
-        text = read_text(roadmap_path)
-        roadmap, digests[ROADMAP] = split_lines(text), sha256(text)
-    entries = {os.path.normpath(e): root_relative(root, e) for e in parked_entries(root)}
-    items, eof_group = _roadmap_items(root, roadmap, entries)
-    linked = {path for item in items for path in item.card.parked}
-    unlinked = [path for path in entries.values() if path not in linked]
+    roadmap_parts: list[Part] = []
+    if roadmap_path is not None:
+        f = read_file(roadmap_path)
+        layout = roadmap_from_file(f)
+        roadmap, roadmap_parts, digests[ROADMAP] = f.lines, layout.parts, sha256(f.text)
+        notices += [_notice(root, b, "roadmap") for b in layout.breaches]
+    work = [ParkedWork(w.name, [root_relative(root, f) for f in w.files]) for w in parked_work(root)]
+    pieces = {os.path.normpath(os.path.join(root, f)): w for w in work for f in w.files}
+    links = list(prose_links(roadmap))
+    roadmap_cards = _told_apart([_roadmap_card(root, part, roadmap, links, pieces) for part in roadmap_parts])
+    linked = {path for card in roadmap_cards for path in card.parked}
+    unlinked = [w for w in work if not linked.intersection(w.files)]
 
     design = active_document(root, ACTIVE_DESIGN)
     files = design_files(design) if design else []
@@ -287,36 +333,297 @@ def _read(root: str) -> _Read:
     for f in files:
         digests[root_relative(root, f.path)] = sha256(f.text)
     lines = {f.path: f.lines for f in files}
-    parts = design_from_files(files).parts if files else []
-    sections = [_design_section(root, part, lines[part.path], unlinked) for part in parts]
-    in_design = {s.card.parked for s in sections}
+    design_parts: list[Part] = []
+    if files:
+        read = design_from_files(files)
+        design_parts = read.parts
+        notices += [_notice(root, b, "design") for b in read.breaches if b.kind in LAYOUT_BREACHES]
+    design_cards = _told_apart([_design_card(root, part, lines[part.path], unlinked) for part in design_parts])
+    in_design = [card.parked for card in design_cards]
     return _Read(
         roadmap=roadmap,
-        items=items,
-        eof_group=eof_group,
-        parked=[ParkedCard(_entry_name(path), path) for path in unlinked if path not in in_design],
+        roadmap_parts=roadmap_parts,
+        roadmap_cards=roadmap_cards,
+        parked=[ParkedCard(w.name, w.files, _file_hrefs(root, w.files)) for w in unlinked if w.files not in in_design],
         design=design,
         diced=design is not None and os.path.basename(design) == ENTRY_POINT,
         lines=lines,
-        sections=sections,
+        design_parts=design_parts,
+        design_cards=design_cards,
+        notices=notices,
         sha256=digests,
     )
 
 
-def _design_section(root: str, part: DesignPart, lines: list[str], unlinked: list[str]) -> _Section:
-    """The card and line range of one part of the design, lines being its file's."""
-    body = [] if part.kind == DELTA else _trimmed(lines[part.first + 1 : part.end])
+def _notice(root: str, breach: Breach, column: str) -> Notice:
+    return Notice(column, root_relative(root, breach.path), breach.line, breach.found, breach.accepted)
+
+
+def _told_apart(cards: list[_Card]) -> list[_Card]:
+    """cards, each one's occurrence set to the number of cards before it equal to it in every other
+    field."""
+    for k, card in enumerate(cards):
+        card.occurrence = sum(replace(c, occurrence=0) == card for c in cards[:k])
+    return cards
+
+
+def _text(part: Part, lines: list[str]) -> str:
+    """A ticket's text: its lines below the heading, blank lines at either end dropped."""
+    return "\n".join(_trimmed(lines[part.first + 1 : part.last + 1]))
+
+
+def _roadmap_card(
+    root: str, part: Part, lines: list[str], links: list[tuple[int, str]], pieces: dict[str, ParkedWork]
+) -> RoadmapCard:
+    """The card, or for a category the separator, of one part of the roadmap, lines being its lines
+    and links their prose_links; pieces maps each parked file's normalized path to its piece of
+    parked work, files relative to root. Its occurrence is left 0."""
+    if part.kind != TICKET:
+        return RoadmapCard(part.title, "", None, [], part.kind, 0)
+    parked: list[str] = []
+    for no, target in links:
+        work = pieces.get(os.path.normpath(os.path.join(root, target.partition("#")[0])))
+        if part.first < no <= part.last + 1 and work:
+            parked += [f for f in work.files if f not in parked]
+    return RoadmapCard(part.title, _text(part, lines), _href(root, part.path, part.anchor), parked, TICKET, 0)
+
+
+def _design_card(root: str, part: Part, lines: list[str], unlinked: list[ParkedWork]) -> DesignCard:
+    """The card, or for a category the separator, of one part of the design, lines being its file's
+    and unlinked the parked work no roadmap ticket links, files relative to root. Its occurrence is
+    left 0."""
+    path = root_relative(root, part.path)
+    if part.kind in (CATEGORY, DELTA):
+        return DesignCard(part.title, "", path, None, None, None, part.kind, 0)
     parked = None
-    if part.kind == SECTION and lines[part.first] == f"## {part.heading}":
+    if part.kind == TICKET:
         here = _directory(root, part.path)
-        parked = next((p for p in unlinked if part.heading == _entry_name(p) and body == _link_body(p, here)), None)
-    title = _link_texts(part.heading) if part.kind == ENTRY else part.heading
-    card = DesignCard(title, "\n".join(body), root_relative(root, part.path), parked, part.kind)
-    return _Section(card, part.path, part.first, part.end)
+        ticket = lines[part.first : part.last + 1]
+        parked = next((w.files for w in unlinked if ticket == _link_ticket(w.name, w.files, here)), None)
+    href = _href(root, part.path, part.anchor)
+    parked_hrefs = None if parked is None else _file_hrefs(root, parked)
+    return DesignCard(part.title, _text(part, lines), path, href, parked, parked_hrefs, part.kind, 0)
 
 
-def _write(root: str, changes: list[tuple[str, Optional[list[str]]]], read: dict[str, Optional[str]]) -> list[str]:
-    """Check every file changes names against read, then write each in order, None deleting it."""
+def _package_card(root: str, package: WorkPackage) -> PackageCard:
+    heading = package.heading
+    href = _href(root, heading.path, heading.anchor) if heading else _href(root, package.path, "")
+    return PackageCard(**vars(package), href=href)
+
+
+def _href(root: str, path: str, anchor: str) -> str:
+    """The URL path of the file at path, its path from root percent-quoted (a byte of a name that is
+    not UTF-8 quoted as that byte), then `#` and anchor where there is one; the one builder of a
+    served file's URL."""
+    url = "/" + quote(root_relative(root, path), errors="surrogateescape")
+    return f"{url}#{anchor}" if anchor else url
+
+
+def _file_hrefs(root: str, files: list[str]) -> list[str]:
+    """The URL path of each of files, relative to root, no anchor."""
+    return [_href(root, os.path.join(root, f), "") for f in files]
+
+
+def _ticket_at(cards: Sequence[Union[RoadmapCard, DesignCard]], card: dict[str, Any]) -> Optional[int]:
+    """The index of the ticket card among cards that equals card as served; None where none does."""
+    return next((k for k, c in enumerate(cards) if c.kind == TICKET and asdict(c) == card), None)
+
+
+def _opens_an_index(now: _Read, head: int) -> bool:
+    """Whether the category part now.design_parts[head] opens an `index.md`: only blank lines above it."""
+    part = now.design_parts[head]
+    return os.path.basename(part.path) == INDEX and all(is_blank(line) for line in now.lines[part.path][: part.first])
+
+
+def _new_leaf(
+    root: str, now: _Read, head: Optional[int], title: str, ticket: Callable[[str], list[str]]
+) -> list[_Change]:
+    """The writes adding a ticket titled title to a diced design as a new leaf: beside the `index.md`
+    that the `## Drafts` part now.design_parts[head] opens, else, head being None, in a `drafts`
+    directory beside the entry point, with its `index.md`. ticket gives its lines for a file's path.
+    Its Contents lines' text is the link text dicing gives a section titled title. Raises MoveRefused
+    where title has no §3.2 name or a file to create exists."""
+    name = section_name(title)
+    if not name:
+        raise MoveRefused(f"the title {title!r} names no file: give the ticket a title with a letter or digit")
+    entry = now.design
+    top = os.path.dirname(entry)
+    text = contents_text(*split_number(title))
+    item = contents_line("", text=text, path=f"{name}.md")
+    if head is not None:
+        index = now.design_parts[head].path
+        leaf = os.path.join(os.path.dirname(index), f"{name}.md")
+        created = [leaf]
+        changes: list[_Change] = [(leaf, ticket(leaf)), (index, _items_added(now.lines[index], [item]))]
+        listed = _listed(now.lines[entry], root_relative(top, leaf), text)
+        if listed is not None:
+            changes.append((entry, listed))
+    else:
+        directory = os.path.join(top, DRAFTS_DIRECTORY)
+        leaf = os.path.join(directory, f"{name}.md")
+        index = os.path.join(directory, INDEX)
+        created = [leaf, index]
+        listing = [
+            contents_line("", text=DRAFTS, path=f"{DRAFTS_DIRECTORY}/{INDEX}"),
+            contents_line("  ", text=text, path=f"{DRAFTS_DIRECTORY}/{name}.md"),
+        ]
+        changes = [
+            (leaf, ticket(leaf)),
+            (index, [f"## {DRAFTS}", "", CONTENTS, "", item]),
+            (entry, _items_added(now.lines[entry], listing)),
+        ]
+    for path in created:
+        if os.path.lexists(path):
+            raise MoveRefused(f"{root_relative(root, path)} exists: the move would create it")
+    return changes
+
+
+def _ticket_removed(root: str, now: _Read, part: Part) -> list[_Change]:
+    """The writes removing the design ticket of part: a leaf holding only the ticket goes with its
+    line in the list of its directory's head's Contents block and, where that head is not the entry
+    point, in the full listing; any other ticket through _removed. Raises MoveRefused where that list
+    has no line linking the leaf."""
+    lines = now.lines[part.path]
+    by_path = {os.path.normpath(p): p for p in now.lines}
+    heads = [os.path.normpath(os.path.join(os.path.dirname(part.path), name)) for name in HEADS]
+    head = next((by_path[p] for p in heads if p in by_path), None)
+    whole = all(is_blank(line) for line in lines[: part.first] + lines[part.last + 1 :])
+    if not whole or head is None or os.path.basename(part.path) in HEADS:
+        return [(part.path, _removed(lines, part))]
+    head_lines = now.lines[head]
+    leaf = os.path.basename(part.path)
+    line = next((k for k in range(*_listing(head_lines)) if _links(head_lines[k], leaf)), None)
+    if line is None:
+        raise MoveRefused(
+            f"{root_relative(root, head)} has no Contents line linking {root_relative(root, part.path)}: the leaf"
+            " cannot go with its line"
+        )
+    changes: list[_Change] = [(head, _without(head_lines, line))]
+    entry = now.design
+    if head != entry:
+        entry_lines = now.lines[entry]
+        first, end = _listing(entry_lines)
+        from_top = root_relative(os.path.dirname(entry), part.path)
+        listed = next((k for k in range(first, end) if _links(entry_lines[k], from_top)), None)
+        if listed is not None:
+            changes.append((entry, _without(entry_lines, listed)))
+    changes.append((part.path, None))
+    return changes
+
+
+def _without(lines: list[str], k: int) -> list[str]:
+    return lines[:k] + lines[k + 1 :]
+
+
+def _links(line: str, path: str) -> bool:
+    """Whether a link of line targets path, a `/`-separated relative path, once normalized and its
+    fragment dropped."""
+    return any(not never_rebased(t) and posixpath.normpath(t.partition("#")[0]) == path for t in link_targets(line))
+
+
+def _listing(lines: list[str]) -> tuple[int, int]:
+    """The list under the last `Contents:` line of a head file's lines, as (first, end): its run of
+    list items after any blank lines; first == end where it lists nothing, first then being where a
+    first item would go. (len, len) where there is no `Contents:` line."""
+    cut = contents_cut(lines)
+    if cut < 0:
+        return len(lines), len(lines)
+    first = next((k for k in range(cut + 1, len(lines)) if not is_blank(lines[k])), len(lines))
+    end = next((k for k in range(first, len(lines)) if not _ITEM.match(lines[k])), len(lines))
+    return first, end
+
+
+def _items_added(lines: list[str], items: list[str]) -> list[str]:
+    """A head file's lines with items after the last item of the list under its last `Contents:`
+    line; where it lists nothing, directly below that line after a blank line; with no `Contents:`
+    line, in a Contents block appended to it."""
+    cut = contents_cut(lines)
+    if cut < 0:
+        return _appended(lines, CONTENTS, items)
+    first, end = _listing(lines)
+    if first < end:
+        return [*lines[:end], *items, *lines[end:]]
+    return [*lines[: cut + 1], "", *items, *([""] if first < len(lines) else []), *lines[first:]]
+
+
+def _listed(lines: list[str], leaf: str, text: str) -> Optional[list[str]]:
+    """The entry point's lines with the line `- [<text>](<leaf>)` added to its full listing, leaf
+    being the path from the entry point's directory: two spaces deeper than the line linking the
+    leaf's directory's `index.md`, after it and the lines below it indented deeper; at the listing's
+    end, indented two spaces, where no line links that head. None where there is no full listing:
+    no list under the last `Contents:` line, or none of its lines linking a file not beside the entry
+    point."""
+    first, end = _listing(lines)
+    if not any(
+        "/" in posixpath.normpath(t.partition("#")[0]) for k in range(first, end) for t in link_targets(lines[k])
+    ):
+        return None
+    directory = posixpath.dirname(leaf)
+    index = posixpath.join(directory, INDEX)
+    at = next((k for k in range(first, end) if directory and _links(lines[k], index)), None)
+    if at is None:
+        return [*lines[:end], contents_line("  ", text=text, path=leaf), *lines[end:]]
+    depth = _indent(lines[at])
+    below = next((k for k in range(at + 1, end) if _indent(lines[k]) <= depth), end)
+    return [*lines[:below], contents_line(" " * (depth + 2), text=text, path=leaf), *lines[below:]]
+
+
+def _indent(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
+def _rebased(lines: list[str], source: str, destination: str) -> list[str]:
+    """A ticket's lines moved from a file in directory source to one in destination, both relative
+    to the root: each relative link target in their prose resolved from source and made relative to
+    destination, its fragment kept; lines inside fenced code and code spans unchanged. Between equal
+    directories, lines as given."""
+    if source == destination:
+        return lines
+
+    def rebased(raw: str, text: str, target: str, after: str) -> str:
+        if never_rebased(target):
+            return raw
+        path, mark, fragment = target.partition("#")
+        return f"[{text}]({rel(destination, posixpath.normpath(posixpath.join(source, path)))}{mark}{fragment})"
+
+    return [line if fenced else scan(line, rebased) for line, fenced in zip(lines, fence_flags(lines))]
+
+
+def _category(parts: list[Part], head: int) -> list[Part]:
+    """The category whose part is parts[head]: that part and its tickets' parts."""
+    end = next((k for k in range(head + 1, len(parts)) if parts[k].kind in (CATEGORY, DELTA)), len(parts))
+    return parts[head:end]
+
+
+def _added(lines: list[str], category: list[Part], ticket: list[str]) -> list[str]:
+    """lines, the file holding category's part, with ticket added at the end of category, its part and
+    its tickets' parts: after the category's last non-blank line in that file, a blank line before it
+    and, where a heading follows directly, a blank line after it. In a diced design's head file the
+    category so ends at its Contents cut: its parts there end before it, and its tickets in later
+    files are not added after."""
+    at = max(p.last for p in category if p.path == category[0].path) + 1
+    after = [""] if at < len(lines) and HEADING.match(lines[at]) else []
+    return [*lines[:at], "", *ticket, *after, *lines[at:]]
+
+
+def _appended(lines: list[str], heading: str, ticket: list[str]) -> list[str]:
+    """lines with heading and ticket appended, a blank line before each unless the line above is
+    blank or there is none."""
+    blank = [""] if lines and not is_blank(lines[-1]) else []
+    return [*lines, *blank, heading, "", *ticket]
+
+
+def _removed(lines: list[str], part: Part) -> list[str]:
+    """lines without the ticket of part, its first..last, and the blank lines directly above it."""
+    first = part.first
+    while first > 0 and is_blank(lines[first - 1]):
+        first -= 1
+    return lines[:first] + lines[part.last + 1 :]
+
+
+def _write(root: str, changes: list[_Change], read: dict[str, Optional[str]]) -> list[str]:
+    """Check every file changes names against read, then write each in order: a file whose lines
+    are None is deleted, and a new file's missing directory is made just before it."""
     for path, _ in changes:
         name = root_relative(root, path)
         if (sha256(read_text(path)) if os.path.isfile(path) else None) != read.get(name):
@@ -327,6 +634,9 @@ def _write(root: str, changes: list[tuple[str, Optional[list[str]]]], read: dict
             if lines is None:
                 os.remove(path)
             else:
+                directory = os.path.dirname(path)
+                if not os.path.isdir(directory):
+                    os.makedirs(directory)
                 replace_lines(path, lines)
         except OSError as e:
             raise MoveWriteFailed(root_relative(root, path), written) from e
@@ -334,182 +644,14 @@ def _write(root: str, changes: list[tuple[str, Optional[list[str]]]], read: dict
     return written
 
 
-def _entry_name(path: str) -> str:
-    directory, name = os.path.split(path)
-    return os.path.basename(directory) if name == ENTRY_POINT else os.path.splitext(name)[0]
-
-
-def _link_body(parked: str, here: str) -> list[str]:
-    """A link section's lines below its heading, in a file in directory here, both relative to root."""
-    return [f"[{parked}]({rel(here, parked)})", "", INSTRUCTION]
+def _link_ticket(name: str, files: list[str], here: str) -> list[str]:
+    """The lines of the link ticket for the parked work named name, whose files are files, in a file
+    in directory here, all relative to root: one link line per file. The one writer of the form and
+    the one recogniser of it."""
+    return [f"### {name}", "", *(f"[{f}]({rel(here, f)})" for f in files), "", INSTRUCTION]
 
 
 def _trimmed(lines: list[str]) -> list[str]:
     first = next((i for i, line in enumerate(lines) if not is_blank(line)), len(lines))
     last = next((i for i in range(len(lines) - 1, -1, -1) if not is_blank(lines[i])), -1)
     return lines[first : last + 1]
-
-
-def _items(lines: list[str]) -> tuple[list[tuple[str, Optional[int], int, int]], Optional[int]]:
-    """(group, group's heading line, first, last) of each top-level list item outside fenced code,
-    0-based and inclusive, last being its last non-blank line; and the `##` heading line in effect at
-    the end. An item ends at the next item or heading, or at a line starting in column 0 after a
-    blank line."""
-    items: list[tuple[str, Optional[int], int, int]] = []
-    group, group_line = "", None
-    in_item = after_blank = in_fence = False
-    for i, (line, fenced) in enumerate(zip(lines, fence_flags(lines))):
-        heading = None if fenced else HEADING.match(line)
-        if heading or (not fenced and _ITEM.match(line)):
-            in_item = not heading
-            if heading and len(heading.group(1)) == 2:
-                group, group_line = line[heading.end() :].strip(), i
-            if in_item:
-                items.append((group, group_line, i, i))
-        elif in_item and not is_blank(line):
-            if after_blank and not line[:1].isspace() and not in_fence:
-                in_item = False
-            else:
-                items[-1] = (*items[-1][:3], i)
-        after_blank, in_fence = is_blank(line), fenced
-    return items, group_line
-
-
-def _roadmap_items(root: str, lines: list[str], entries: dict[str, str]) -> tuple[list[_Item], Optional[int]]:
-    """An item per top-level item of the roadmap's lines, and the heading line in effect at its end;
-    entries maps each parked entry's normalized path to its path relative to root."""
-    links = list(prose_links(lines))
-    found, eof_group = _items(lines)
-    items = []
-    for group, group_line, first, last in found:
-        parked: list[str] = []
-        for no, target in links:
-            entry = entries.get(os.path.normpath(os.path.join(root, target.partition("#")[0])))
-            if first < no <= last + 1 and entry and entry not in parked:
-                parked.append(entry)
-        item = lines[first : last + 1]
-        card = RoadmapCard(_roadmap_title(item), group, "\n".join(item), parked)
-        items.append(_Item(card, group_line, first, last, _ITEM.match(item[0]).group()))
-    return items, eof_group
-
-
-def _roadmap_title(item: list[str]) -> str:
-    """The item's bold lead where it opens with one, else its first sentence, cut to TITLE_LENGTH;
-    either without a closing `.` or `:`, and each link in it reduced to its text, so the title can
-    head a section and name a Contents line."""
-    text = item[0][_ITEM.match(item[0]).end() :]
-    bold = _BOLD_LEAD.match(text)
-    if bold:
-        return _link_texts(bold.group(1)).strip().rstrip(".:")
-    paragraph = [text]
-    for line in item[1:]:
-        if is_blank(line) or _LIST_LINE.match(line):
-            break
-        paragraph.append(line.strip())
-    joined = _link_texts(" ".join(paragraph)).strip()
-    end = _SENTENCE_END.search(joined)
-    sentence = (joined[: end.end()] if end else joined).rstrip(".:")
-    return sentence if len(sentence) <= TITLE_LENGTH else sentence[: TITLE_LENGTH - 1].rstrip() + "…"
-
-
-def _link_texts(text: str) -> str:
-    """text with each link outside code spans replaced by its link text."""
-    return scan(text, lambda raw, link_text, target, after: link_text)
-
-
-def _roadmap_with(now: _Read, title: str, body: list[str], target: Optional[_Item]) -> list[str]:
-    """ROADMAP.md's lines with a section headed title, its body lines given, as an item at the end of
-    target's group, else at the end of the file, taking the marker of that group's items."""
-    group_line = target.group_line if target is not None else None
-    at_end = group_line is None
-    members = [i for i in now.items if i.group_line == (now.eof_group if at_end else group_line)]
-    marker = _next_marker(members[-1].marker) if members else "- "
-    item = _returned_item(title, body, marker)
-    lines = now.roadmap
-    if not at_end:
-        at = members[-1].last + 1
-    elif members and all(is_blank(line) for line in lines[members[-1].last + 1 :]):
-        at = members[-1].last + 1
-    else:
-        separator = [""] if lines and not is_blank(lines[-1]) else []
-        return [*lines, *separator, *item]
-    return [*lines[:at], *item, *lines[at:]]
-
-
-def _next_marker(marker: str) -> str:
-    """The marker an item after one marked marker takes: the same bullet, or the next number."""
-    word = marker.rstrip()
-    if word[0].isdigit():
-        return f"{int(word[:-1]) + 1}.{marker[len(word):]}"
-    return marker
-
-
-def _returned_item(title: str, body: list[str], marker: str) -> list[str]:
-    """The item a section returns as: the body after marker where that gives title and reads back as
-    one item over every body line, else title as its bold lead, the body after it, its later lines
-    indented under the marker."""
-    if body:
-        as_written = [marker + body[0], *body[1:]]
-        found, _ = _items(as_written)
-        if _roadmap_title(as_written) == title and [(f, last) for _, _, f, last in found] == [(0, len(body) - 1)]:
-            return as_written
-    lead = f"{marker}**{title}**"
-    if not body:
-        return [lead]
-    indent = " " * len(marker)
-    return [f"{lead} {body[0]}", *(line if is_blank(line) else indent + line for line in body[1:])]
-
-
-def _rebased(lines: list[str], source: str, destination: str) -> list[str]:
-    """lines moved from a file in directory source to one in destination, both relative to the root,
-    each relative link target outside fenced code and code spans made to reach the same file. Targets
-    that mean the same from any directory (empty, `#...`, `/...`, a URL) stay as written."""
-    if source == destination:
-        return lines
-
-    def rebase(raw: str, link_text: str, target: str, after: str) -> str:
-        if never_rebased(target):
-            return raw
-        path, hash_, fragment = target.partition("#")
-        return f"[{link_text}]({rel(destination, posixpath.normpath(posixpath.join(source, path)))}{hash_}{fragment})"
-
-    return [line if fenced else scan(line, rebase) for line, fenced in zip(lines, fence_flags(lines))]
-
-
-def _is_whole_leaf(section: _Section, lines: list[str], entry: str) -> bool:
-    """Whether section is all of a leaf beside a diced design's entry point."""
-    return (
-        os.path.dirname(section.path) == os.path.dirname(entry)
-        and os.path.basename(section.path) not in HEADS
-        and all(is_blank(line) for line in lines[: section.first])
-        and section.end == len(lines)
-    )
-
-
-def _with_contents_line(lines: list[str], contents_line: str) -> list[str]:
-    """lines with contents_line after the last item of the list under the last `Contents:` line,
-    or a Contents block holding it appended where there is none."""
-    start = contents_cut(lines)
-    if start < 0:
-        return [*lines, "", CONTENTS, "", contents_line]
-    at = start + 1
-    for i in range(at, len(lines)):
-        if _LIST_LINE.match(lines[i]):
-            at = i + 1
-        elif not is_blank(lines[i]):
-            break
-    if at == start + 1:
-        return [*lines[:at], "", contents_line, *lines[at:]]
-    return [*lines[:at], contents_line, *lines[at:]]
-
-
-def _without_contents_line(lines: list[str], name: str) -> Optional[list[str]]:
-    """lines without the line after the last `Contents:` line that links the leaf name; None where
-    there is no Contents block or no line of it does."""
-    start = contents_cut(lines)
-    if start < 0:
-        return None
-    for i in range(start + 1, len(lines)):
-        if any(posixpath.normpath(t.partition("#")[0]) == name for t in link_targets(lines[i])):
-            return lines[:i] + lines[i + 1 :]
-    return None

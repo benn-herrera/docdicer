@@ -5,7 +5,9 @@ Second line of the opening paragraph.
 
 ## 1. Storage
 
-**Durability.** Writes survive, see [the architecture](ARCH.md), "Storage layer".
+### Durability
+
+Writes survive, see [the architecture](ARCH.md), "Storage layer".
 
 **Open.** Kept as a run-in.
 

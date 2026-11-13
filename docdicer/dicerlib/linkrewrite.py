@@ -9,23 +9,19 @@ path; "<target>\t<heading>\t<path>" sends a link whose following text quotes tha
 import posixpath
 import re
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Optional
 
+from .anchors import heading_anchor_list
+from .linkscan import OnLink, OnRef, scan
 from .outline import Outline
 from .textfile import read_lines
 
 URL_SCHEME = re.compile(r"[a-z]+:")
-_SECTION_REF = re.compile(r"§[0-9]+(?:\.[0-9]+)*")
 _SECTION_LINK_TEXT = re.compile(r"§[0-9]")
 _NAMED_CHILD = re.compile(r" `([^`]+)`")
 _OTHER_DOCUMENT = re.compile(r"(?:SPEC|ARCHITECTURE|THESIS|CONVENTIONS)(?:\.md)? $")
 _BARE_TAIL = re.compile(r",? *")
 _QUOTED_HEADING = re.compile(r',? *"([^"]+)"')
-
-# (raw link, text, target, rest of the line after the link) -> replacement
-OnLink = Callable[[str, str, str, str], str]
-# (reference, line, offset after the reference, output so far) -> (replacement, offset to resume at)
-OnRef = Callable[[str, str, int, str], tuple[str, int]]
 
 
 def rel(from_dir: str, to: str) -> str:
@@ -69,48 +65,10 @@ class Tree:
     link_map: LinkMap
 
 
-def scan(s: str, on_link: OnLink, on_ref: Optional[OnRef] = None) -> str:
-    """Rewrite the prose of one line: code spans pass through, each `[text](target)` is replaced by
-    on_link and, given on_ref, each `§N` reference by on_ref."""
-    if "](" not in s and (on_ref is None or "§" not in s):
-        return s
-    out = []
-    p, n = 0, len(s)
-    while p < n:
-        c = s[p]
-        if c == "`":
-            q = p
-            while q < n and s[q] == "`":
-                q += 1
-            close = s.find(s[p:q], q)
-            end = q if close < 0 else close + q - p
-            out.append(s[p:end])
-            p = end
-            continue
-        if c == "[":
-            bracket = s.find("]", p)
-            paren = s.find(")", bracket + 2) if bracket >= 0 and s.startswith("](", bracket) else -1
-            if paren >= 0:
-                out.append(on_link(s[p : paren + 1], s[p + 1 : bracket], s[bracket + 2 : paren], s[paren + 1 :]))
-                p = paren + 1
-                continue
-        if on_ref is not None:
-            m = _SECTION_REF.match(s, p)
-            if m:
-                text, p = on_ref(m.group(), s, m.end(), "".join(out))
-                out.append(text)
-                continue
-        out.append(c)
-        p += 1
-    return "".join(out)
-
-
 def _anchor_homes(outline: Outline, lines: list[str]) -> dict[str, tuple[str, str]]:
     """For each heading anchor of the monolith, the file of the diced tree that holds the heading
     and its anchor there: "" where the heading opens that file (a link to the file needs none),
     else its anchor within the file, whose repeat suffixes count that file's headings alone."""
-    from .linkcheck import heading_anchor_list  # linkcheck imports this module
-
     owner = {}  # monolith line -> section holding it
     for s in outline.sections:
         for no in range(s.first, s.last + 1):
@@ -128,18 +86,6 @@ def _anchor_homes(outline: Outline, lines: list[str]) -> dict[str, tuple[str, st
         own = no == s.first and s.id > 0
         homes.setdefault(anchor.name, (s.path, "" if own else within))
     return homes
-
-
-def link_targets(line: str) -> list[str]:
-    """The target of every link in the prose of a line, in order."""
-    found = []
-
-    def collect(raw: str, text: str, target: str, after: str) -> str:
-        found.append(target)
-        return raw
-
-    scan(line, collect)
-    return found
 
 
 class Linker:

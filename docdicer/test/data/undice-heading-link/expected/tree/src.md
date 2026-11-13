@@ -6,3 +6,6 @@ Intro.
 
 First text.
 
+## 2. Compare §1 with [the first](#1-first)
+
+Second text.

@@ -1,0 +1,5 @@
+dice-doc
+--split-level
+3
+doc.md
+out

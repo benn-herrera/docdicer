@@ -1,5 +1,0 @@
-# Doc
-
-## Section
-
-**Title.** Text.

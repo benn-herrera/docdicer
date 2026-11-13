@@ -1,6 +1,6 @@
-"""The plan and design checks: every breach of the plan form a plan holds, or of the design form a
-design holds, each reported with its file, line, the text found there and the form accepted in its
-place, so that the fix can be made from the message.
+"""The plan, design and roadmap checks: every breach of the plan form a plan holds, of the design
+form a design holds, or of the ticket layout a roadmap holds, each reported with its file, line, the
+text found there and the form accepted in its place, so that the fix can be made from the message.
 """
 
 import re
@@ -11,12 +11,15 @@ from .planform import (
     ACTIVE_DESIGN,
     ACTIVE_PLAN,
     ENTRY,
+    TICKET,
     Breach,
     BreachKind,
     active_document,
     find_project_root,
     read_design,
     read_plan,
+    read_roadmap,
+    roadmap_file,
 )
 
 _PROBLEMS = {
@@ -35,7 +38,10 @@ _PROBLEMS = {
     BreachKind.DELTA_ORDER: "delta heading out of order",
     BreachKind.NO_DELTA: "design has no delta",
     BreachKind.DELTA_CONTENT: "delta holds content outside an entry",
-    BreachKind.ENTRY_EMPTY: "entry heading names nothing",
+    BreachKind.TICKET_OUTSIDE: "ticket outside a category",
+    BreachKind.OLD_FORM_ITEM: "list item in the old ticket form",
+    BreachKind.TICKET_EMPTY: "ticket heading names nothing",
+    BreachKind.NO_CATEGORY: "roadmap has no category",
 }
 
 
@@ -52,7 +58,8 @@ def _check(
     document: Optional[str],
     *,
     noun: str,
-    monolith: str,
+    find: Callable[[str], Optional[str]],
+    absent: str,
     read: Callable[[str], tuple[list[Breach], int]],
     counted: str,
     empty: str,
@@ -60,8 +67,9 @@ def _check(
     stdout: TextIO,
     stderr: TextIO,
 ) -> int:
-    """The check driver of check_plan and check_design: noun names the document kind, monolith its
-    active document, read gives its breaches and the count the summary names as counted, and empty
+    """The check driver of check_plan, check_design and check_roadmap: noun names the document kind,
+    find gives its default document under a project root or None, absent names the document where
+    find gives none, read gives its breaches and the count the summary names as counted, and empty
     is what an empty found text is."""
     if document is None:
         root = find_project_root(start)
@@ -73,9 +81,9 @@ def _check(
                 file=stderr,
             )
             return 2
-        document = active_document(root, monolith)
+        document = find(root)
         if document is None:
-            print(f"no active {noun} in {root}", file=stdout)
+            print(f"no {absent} in {root}", file=stdout)
             return 0
     try:
         breaches, count = read(document)
@@ -101,6 +109,11 @@ def _design_breaches(path: str) -> tuple[list[Breach], int]:
     return design.breaches, sum(part.kind == ENTRY for part in design.parts)
 
 
+def _roadmap_breaches(path: str) -> tuple[list[Breach], int]:
+    roadmap = read_roadmap(path)
+    return roadmap.breaches, sum(part.kind == TICKET for part in roadmap.parts)
+
+
 def check_plan(plan: Optional[str], *, start: str, stdout: TextIO, stderr: TextIO) -> int:
     """Check the plan at plan, or with None the active plan of the project the directory start is
     in; 0 when it holds no breach or there is no active plan, 1 on any breach, 2 when the project
@@ -108,7 +121,8 @@ def check_plan(plan: Optional[str], *, start: str, stdout: TextIO, stderr: TextI
     return _check(
         plan,
         noun="plan",
-        monolith=ACTIVE_PLAN,
+        find=lambda root: active_document(root, ACTIVE_PLAN),
+        absent="active plan",
         read=_plan_breaches,
         counted="work packages",
         empty="cell",
@@ -125,9 +139,28 @@ def check_design(design: Optional[str], *, start: str, stdout: TextIO, stderr: T
     return _check(
         design,
         noun="design",
-        monolith=ACTIVE_DESIGN,
+        find=lambda root: active_document(root, ACTIVE_DESIGN),
+        absent="active design",
         read=_design_breaches,
         counted="entries",
+        empty="line",
+        start=start,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+
+def check_roadmap(roadmap: Optional[str], *, start: str, stdout: TextIO, stderr: TextIO) -> int:
+    """Check the roadmap at roadmap, or with None the `ROADMAP.md` of the project the directory start
+    is in; 0 when it holds no breach or there is no `ROADMAP.md`, 1 on any breach, 2 when the project
+    root is not found or the roadmap cannot be read."""
+    return _check(
+        roadmap,
+        noun="roadmap",
+        find=roadmap_file,
+        absent="roadmap",
+        read=_roadmap_breaches,
+        counted="tickets",
         empty="line",
         start=start,
         stdout=stdout,

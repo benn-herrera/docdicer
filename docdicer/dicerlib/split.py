@@ -3,7 +3,7 @@ the entry point and each section index end with a Contents block listing what is
 
 from typing import TextIO
 
-from .heads import CONTENTS
+from .heads import CONTENTS, contents_line
 from .linkrewrite import Linker, Tree, parent_dir, rel
 from .outline import Outline, Section
 from .textfile import fence_flags, write_lines
@@ -15,11 +15,11 @@ def contents_block(outline: Outline, section: Section) -> list[str]:
     if section.id == 0:
         for s in outline.sections[1:]:
             indent = "  " * (outline.depth[s.id] - 1)
-            block.append(f"{indent}- [{outline.link_text(s.id)}]({s.path})")
+            block.append(contents_line(indent, text=outline.link_text(s.id), path=s.path))
         return block
     here = parent_dir(section.path)
     for kid in outline.children.get(section.id, []):
-        block.append(f"- [{outline.link_text(kid)}]({rel(here, outline.sections[kid].path)})")
+        block.append(contents_line("", text=outline.link_text(kid), path=rel(here, outline.sections[kid].path)))
     return block
 
 

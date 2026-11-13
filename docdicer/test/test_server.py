@@ -25,6 +25,7 @@ from urllib.parse import urlsplit
 
 import pytest
 
+import docdicer
 from docdicer.kanban import board as board_module
 from docdicer.kanban import planform
 from docdicer.kanban import server as server_module
@@ -35,7 +36,8 @@ _PLAN = (
     "# Plan\n\nRelease: 9.9.9\n\n## Status\n\n| Package | Rating | State |\n|---|---|---|\n"
     "| P1 | expert | |\n| P2 | expert | dispatchable |\n| P3 | mechanical | landed |\n"
 )
-_ROADMAP = "## Next\n\n- **Search index.** Build an index.\n"
+_ROADMAP = "## Next\n\n### Search index\n\nBuild an index.\n"
+_TWO = "\n### Two\n"  # a second ticket, appended to _ROADMAP
 _DESIGN = "# Design\n\nText.\n"
 _TIMEOUT = 10
 _REFUSAL_SECONDS = 3  # a refusal at start comes long before this
@@ -44,9 +46,14 @@ _REFUSAL_SECONDS = 3  # a refusal at start comes long before this
 def _project(root: Path, files_: dict[str, str]) -> str:
     (root / ".git").mkdir(parents=True)
     for name, text in files_.items():
-        (root / name).parent.mkdir(parents=True, exist_ok=True)
-        (root / name).write_text(text, encoding="utf-8")
+        _create(root / name, text)
     return str(root)
+
+
+def _create(path: Path, text: str) -> None:
+    """Write text to path, creating its directory."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
 
 
 def _wait_until(condition: Callable[[], bool]) -> bool:
@@ -140,6 +147,75 @@ def test_page_and_its_files_are_served(tmp_path, serve):
     assert client.get("../kanban/assets/index.html")[0] == 404
 
 
+_SERVED = {
+    "ROADMAP.md": "## Next\n\n### Café\n",
+    "ACTIVE_DESIGN/entry-point.md": "# Design\n",
+    "ACTIVE_DESIGN/a b%.md": "## Goals\n",
+    "ROADMAP_DESIGNS/tree/entry-point.md": "# Tree\n",
+    "ROADMAP_DESIGNS/tree/leaf.md": "## Leaf\n",
+    "SPEC.md": "# Spec\n",
+}
+
+
+@pytest.mark.parametrize(
+    "path, name",
+    [
+        pytest.param("ROADMAP.md", "ROADMAP.md", id="roadmap"),
+        pytest.param("ACTIVE_DESIGN/a%20b%25.md", "ACTIVE_DESIGN/a b%.md", id="percent-decoded-leaf"),
+        pytest.param("ROADMAP_DESIGNS/tree/entry-point.md", "ROADMAP_DESIGNS/tree/entry-point.md", id="parked-tree"),
+        pytest.param("ROADMAP_DESIGNS/a%FF.md", "ROADMAP_DESIGNS/a\udcff.md", id="parked-file-named-not-utf-8"),
+    ],
+)
+def test_a_file_the_board_reads_is_served(tmp_path, serve, path, name):
+    files_ = dict(_SERVED)
+    if name not in files_:
+        files_[name] = "# A\n"
+        try:
+            _create(tmp_path / "probe" / os.path.basename(name), "")
+        except OSError:
+            pytest.skip("the file system refuses a name that is not UTF-8")
+    root = _project(tmp_path / "proj", files_)
+    status, content_type, body = serve(root).get(path)
+    assert (status, content_type, body) == (200, "text/markdown", files_[name].encode("utf-8"))
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        pytest.param("SPEC.md", id="not-read-by-the-board"),
+        pytest.param("ROADMAP_DESIGNS/tree/leaf.md", id="parked-tree-leaf"),
+        pytest.param("../proj/ROADMAP.md", id="escaping-the-root"),
+        pytest.param("%2e%2e/proj/ROADMAP.md", id="escaping-the-root-percent-encoded"),
+    ],
+)
+def test_no_other_file_is_served(tmp_path, serve, path):
+    client = serve(_project(tmp_path / "proj", _SERVED))
+    assert client.raw("GET", path, headers={"Host": urlsplit(client.url).netloc})[0] == 404
+
+
+def _denied(path: Path) -> bool:
+    """Whether path, its permissions just removed, now refuses this user a read."""
+    try:
+        path.read_text(encoding="utf-8")
+    except PermissionError:
+        return True
+    return False
+
+
+def test_an_unreadable_served_file_is_refused_alone(tmp_path, serve):
+    root = _project(tmp_path / "proj", _SERVED)
+    client = serve(root)
+    leaf = tmp_path / "proj" / "ACTIVE_DESIGN" / "a b%.md"
+    leaf.chmod(0)
+    try:
+        if not _denied(leaf):
+            pytest.skip("chmod denies this user no read")
+        assert client.get("ROADMAP.md")[0] == 200
+        assert client.get("ACTIVE_DESIGN/a%20b%25.md")[0] == 404
+    finally:
+        leaf.chmod(0o644)
+
+
 def test_board_payload_is_the_model(tmp_path, serve):
     root = _project(
         tmp_path / "proj",
@@ -155,6 +231,7 @@ def test_board_payload_is_the_model(tmp_path, serve):
     assert payload["board"] == _json_round_trip(asdict(read_board(root)))
     assert payload["plan_columns"] == [planform.DRAFTED, *planform.STATE_WORDS]
     assert payload["project"] == "proj"
+    assert payload["docdicer_version"] == docdicer.__version__
 
 
 @pytest.mark.parametrize(
@@ -167,6 +244,12 @@ def test_board_payload_is_the_model(tmp_path, serve):
         pytest.param(lambda root: (root / "ACTIVE_PLAN.md").unlink(), id="deletion"),
         pytest.param(
             lambda root: (root / "ROADMAP_DESIGNS" / "new.md").write_text("x\n", encoding="utf-8"), id="parked"
+        ),
+        pytest.param(
+            lambda root: _create(root / "ACTIVE_DESIGN" / "entry-point.md", "## Goals\n"), id="diced-design-created"
+        ),
+        pytest.param(
+            lambda root: _create(root / "ROADMAP_DESIGNS" / "tree" / "entry-point.md", "# Tree\n"), id="parked-tree"
         ),
     ],
 )
@@ -191,10 +274,10 @@ def test_a_change_to_a_diced_designs_leaf_is_followed(tmp_path, serve):
     client = serve(root)
     before = client.board()
 
-    (Path(root) / "ACTIVE_DESIGN" / "goals.md").write_text("## Goals\n\nFast.\n", encoding="utf-8")
+    (Path(root) / "ACTIVE_DESIGN" / "goals.md").write_text("## Goals\n\n### Fast\n\nFast.\n", encoding="utf-8")
     after = client.board(since=before["version"])
 
-    assert after["board"]["design"][0]["text"] == "Fast."
+    assert after["board"]["design"][1]["text"] == "Fast."
 
 
 def test_waiting_for_a_change_returns_the_board_unchanged_at_close(tmp_path, serve):
@@ -228,9 +311,9 @@ def test_an_unreadable_file_keeps_the_last_good_board_and_is_named(tmp_path):
             time.sleep(0.05)
         assert server.payload(None)["board"] == before["board"]
         roadmap.chmod(0o644)
-        roadmap.write_text(_ROADMAP + "- Two.\n", encoding="utf-8")
+        roadmap.write_text(_ROADMAP + _TWO, encoding="utf-8")
         after = before
-        while len(after["board"]["roadmap"]) != 2 and time.monotonic() < deadline:
+        while len(after["board"]["roadmap"]) != 3 and time.monotonic() < deadline:
             after = server.payload(str(after["version"]))
     finally:
         roadmap.chmod(0o644)
@@ -238,7 +321,7 @@ def test_an_unreadable_file_keeps_the_last_good_board_and_is_named(tmp_path):
 
     named = err.getvalue().splitlines()
     assert len(named) == 1 and str(roadmap) in named[0]
-    assert len(after["board"]["roadmap"]) == 2
+    assert len(after["board"]["roadmap"]) == 3
 
 
 def _texts(root: str) -> dict[str, str]:
@@ -246,23 +329,40 @@ def _texts(root: str) -> dict[str, str]:
 
 
 def test_a_card_moves_to_design_and_back(tmp_path, serve):
-    root = _project(tmp_path / "proj", {"ROADMAP.md": _ROADMAP + "- Two.\n", "ACTIVE_DESIGN.md": _DESIGN})
+    root = _project(tmp_path / "proj", {"ROADMAP.md": _ROADMAP + _TWO, "ACTIVE_DESIGN.md": _DESIGN})
     client = serve(root)
     board = client.board()["board"]
 
-    status, payload = client.post("api/to-design", {"card": board["roadmap"][0]})
+    status, payload = client.post("api/to-design", {"card": board["roadmap"][1]})
 
     assert (status, payload["written"]) == (200, ["ACTIVE_DESIGN.md", "ROADMAP.md"])
     assert payload["board"] == _json_round_trip(asdict(read_board(root)))
-    [card] = payload["board"]["design"]
+    [card] = [c for c in payload["board"]["design"] if c["kind"] == "ticket"]
     assert card["title"] == "Search index"
 
     status, payload = client.post("api/to-roadmap", {"card": card, "target": None})
 
     assert (status, payload["written"]) == (200, ["ROADMAP.md", "ACTIVE_DESIGN.md"])
-    assert payload["board"]["design"] == []
-    returned_last = "## Next\n\n- Two.\n- **Search index.** Build an index.\n"
-    assert _texts(root) == {"ROADMAP.md": returned_last, "ACTIVE_DESIGN.md": _DESIGN}
+    assert [c["kind"] for c in payload["board"]["design"]] == ["category"]
+    returned_last = "## Next\n\n### Two\n\n### Search index\n\nBuild an index.\n"
+    assert _texts(root) == {"ROADMAP.md": returned_last, "ACTIVE_DESIGN.md": _DESIGN + "\n## Drafts\n"}
+
+
+def test_a_card_moves_into_a_diced_design(tmp_path, serve):
+    design = {"ACTIVE_DESIGN/entry-point.md": "# Design\n", "ACTIVE_DESIGN/goals.md": "## Goals\n"}
+    root = _project(tmp_path / "proj", {"ROADMAP.md": _ROADMAP, **design})
+    client = serve(root)
+
+    status, payload = client.post("api/to-design", {"card": client.board()["board"]["roadmap"][1]})
+
+    assert (status, payload["written"]) == (
+        200,
+        ["ACTIVE_DESIGN/drafts/search-index.md", "ACTIVE_DESIGN/drafts/index.md", "ACTIVE_DESIGN/entry-point.md"]
+        + ["ROADMAP.md"],
+    )
+    assert [c["path"] for c in payload["board"]["design"] if c["title"] == "Search index"] == [
+        "ACTIVE_DESIGN/drafts/search-index.md"
+    ]
 
 
 @pytest.mark.parametrize(
@@ -271,7 +371,7 @@ def test_a_card_moves_to_design_and_back(tmp_path, serve):
         pytest.param("api/to-design", {"title": "Gone", "path": "ROADMAP_DESIGNS/gone.md"}, id="to-design"),
         pytest.param(
             "api/to-roadmap",
-            {"title": "Gone", "text": "", "path": "ACTIVE_DESIGN.md", "parked": None, "kind": "section"},
+            {"title": "Gone", "text": "", "path": "ACTIVE_DESIGN.md", "parked": None, "kind": "ticket"},
             id="to-roadmap",
         ),
     ],
@@ -302,7 +402,7 @@ def test_a_failed_write_names_the_file_and_the_files_written(tmp_path, serve, mo
     root = _project(tmp_path / "proj", {"ROADMAP.md": _ROADMAP, "ACTIVE_DESIGN.md": _DESIGN})
     client = serve(root)
     _fail_roadmap_writes(monkeypatch)
-    status, payload = client.post("api/to-design", {"card": client.board()["board"]["roadmap"][0]})
+    status, payload = client.post("api/to-design", {"card": client.board()["board"]["roadmap"][1]})
 
     assert status == 500
     assert "ROADMAP.md" in payload["error"]
@@ -314,7 +414,7 @@ def test_a_file_a_move_cannot_read_is_named_from_the_root(tmp_path, serve):
         pytest.skip("root reads any file")
     root = _project(tmp_path / "proj", {"ROADMAP.md": _ROADMAP, "ACTIVE_DESIGN.md": _DESIGN})
     client = serve(root)
-    card = client.board()["board"]["roadmap"][0]
+    card = client.board()["board"]["roadmap"][1]
     roadmap = Path(root) / "ROADMAP.md"
     roadmap.chmod(0)
     try:
@@ -333,7 +433,7 @@ def test_a_failed_read_after_a_move_is_named_and_keeps_the_moves_answer(tmp_path
     root = _project(tmp_path / "proj", {"ROADMAP.md": _ROADMAP, "ACTIVE_DESIGN.md": _DESIGN})
     err = io.StringIO()
     client = serve(root, stderr=err)
-    card = client.board()["board"]["roadmap"][0]
+    card = client.board()["board"]["roadmap"][1]
     unreadable = str(Path(root) / "ACTIVE_DESIGN.md")
 
     def read_fails(_root):
@@ -364,14 +464,14 @@ def test_a_read_that_fails_once_is_retried_without_a_further_edit(tmp_path, serv
         return read_board(path)
 
     monkeypatch.setattr(server_module, "read_board", fails_once)
-    (Path(root) / "ROADMAP.md").write_text(_ROADMAP + "- Two.\n", encoding="utf-8")
+    (Path(root) / "ROADMAP.md").write_text(_ROADMAP + _TWO, encoding="utf-8")
     after = client.board(since=before["version"])
-    while len(after["board"]["roadmap"]) != 2:  # a poll may catch the write half done
+    while len(after["board"]["roadmap"]) != 3:  # a poll may catch the write half done
         after = client.board(since=after["version"])
 
     assert len(calls) >= 2
     assert after["board"] == _json_round_trip(asdict(read_board(root)))
-    assert len(after["board"]["roadmap"]) == 2
+    assert len(after["board"]["roadmap"]) == 3
 
 
 _JSON = "application/json"
@@ -399,12 +499,35 @@ def test_a_bad_request_is_refused(tmp_path, serve, path, content_type, body, len
     assert (tmp_path / "proj" / "ROADMAP.md").read_text(encoding="utf-8") == _ROADMAP
 
 
+def test_a_stop_request_that_is_not_json_is_refused_and_the_board_still_answers(tmp_path, serve):
+    client = serve(_project(tmp_path / "proj", {"ROADMAP.md": _ROADMAP}))
+    headers = {"Host": urlsplit(client.url).netloc, "Content-Type": "text/plain", "Content-Length": "2"}
+
+    assert client.raw("POST", "api/stop", body=b"{}", headers=headers)[0] == 415
+    assert client.board()["version"] == 1
+
+
+def test_a_cross_origin_preflight_is_not_granted(tmp_path, serve):
+    client = serve(_project(tmp_path / "proj", {"ROADMAP.md": _ROADMAP}))
+    headers = {
+        "Host": urlsplit(client.url).netloc,
+        "Origin": "http://attacker.example",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "content-type",
+    }
+
+    _, answer = client.raw("OPTIONS", "api/to-design", headers=headers)
+
+    assert "Access-Control-Allow-Origin" not in answer
+
+
 @pytest.mark.parametrize(
     "method, path, body, answered",
     [
         pytest.param("GET", "api/board", b"", 200, id="GET"),
         # a POST past the Host check fails on its body, so that nothing is moved either way
         pytest.param("POST", "api/to-design", b"[]", 400, id="POST"),
+        pytest.param("POST", "api/stop", b"[]", 400, id="POST-stop"),
     ],
 )
 @pytest.mark.parametrize(
@@ -430,11 +553,14 @@ def test_only_a_request_naming_the_servers_own_host_and_port_is_answered(
 
 
 def test_every_response_forbids_sniffing_and_the_pages_restrict_their_sources(tmp_path, serve):
-    client = serve(_project(tmp_path / "proj", {}))
+    client = serve(_project(tmp_path / "proj", {"ROADMAP.md": _ROADMAP}))
     host = {"Host": urlsplit(client.url).netloc}
 
-    for path in ("", "board.js", "nothing.js", "api/board"):
+    served = ("", "board.js", "ROADMAP.md")
+    for path in (*served, "nothing.js", "api/board"):
         status, headers = client.raw("GET", path, headers=host)
+        if path in served:
+            assert status == 200, path
         assert headers["X-Content-Type-Options"] == "nosniff", path
         if not path.startswith("api/"):
             assert headers["Content-Security-Policy"] == "default-src 'self'; frame-ancestors 'none'", path
@@ -537,8 +663,11 @@ def test_a_port_that_cannot_be_bound_is_refused_with_the_reason(tmp_path, monkey
     assert os.strerror(errno.EADDRINUSE) in err
 
 
-def test_the_command_prints_the_url_and_serves_until_interrupted(tmp_path):
-    root = _project(tmp_path / "proj", {"ACTIVE_PLAN.md": _PLAN})
+def _serve_the_command(
+    root: str, end: Callable[["subprocess.Popen[bytes]", _Client], None]
+) -> tuple[int, bytes, bytes]:
+    """Run `python -m docdicer kanban root`, fetch the page from the URL it prints, end it with end,
+    and give its status and what it wrote after the URL line."""
     child = subprocess.Popen(
         [sys.executable, "-m", "docdicer", "kanban", root],
         stdin=subprocess.DEVNULL,
@@ -552,11 +681,22 @@ def test_the_command_prints_the_url_and_serves_until_interrupted(tmp_path):
         client = _Client(url)
         assert url.startswith("http://127.0.0.1:") and url.endswith("/")
         assert client.get("")[0] == 200
-        child.send_signal(signal.SIGINT)
+        end(child, client)
         out, err = child.communicate(timeout=_TIMEOUT)
     finally:
         if child.poll() is None:
             child.kill()
             child.wait()
+    return child.returncode, out, err
 
-    assert (child.returncode, out, err) == (0, b"", b"")
+
+def test_the_command_prints_the_url_and_serves_until_interrupted(tmp_path):
+    root = _project(tmp_path / "proj", {"ACTIVE_PLAN.md": _PLAN})
+    assert _serve_the_command(root, lambda child, _: child.send_signal(signal.SIGINT)) == (0, b"", b"")
+
+
+def test_the_command_serves_until_stopped_from_the_page(tmp_path):
+    root = _project(tmp_path / "proj", {"ACTIVE_PLAN.md": _PLAN})
+    answers = []
+    assert _serve_the_command(root, lambda _, client: answers.append(client.post("api/stop", {}))) == (0, b"", b"")
+    assert answers == [(200, {})]
