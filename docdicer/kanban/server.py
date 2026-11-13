@@ -1,15 +1,19 @@
 """The kanban server: the board of one project served to a browser on 127.0.0.1, kept live by
 polling the files it reads, with the moves between Roadmap and Design. It keeps no UI state.
 
-Endpoints, each answering JSON but the page's files:
+Endpoints, each answering JSON but the page's files and the served documents:
 
 - `GET /` and `GET /<file>`: the page's files, from the package's `assets/` directory.
+- `GET /<path>.md`: a file the board reads, `board.served_files`, as `text/markdown`, read-only; any
+  other path is 404.
 - `GET /api/board?since=<version>`: the board payload; where `since` is the version the server
   holds, the answer waits until the board changes or `LONG_POLL_SECONDS` pass.
-- `POST /api/to-design` `{"card": <a roadmap or parked card as served>}`: move the card's entry into
-  the active design.
-- `POST /api/to-roadmap` `{"card": <a design card as served>, "target": <the roadmap or parked card
-  dropped on, as served, or null>}`: move the card's section out of the design into `ROADMAP.md`.
+- `POST /api/stop` `{}`: answers `{}`, then stops the server, so `run_kanban` returns 0.
+- `POST /api/to-design` `{"card": <a roadmap or parked card as served>}`: move the card's ticket into
+  the active design (for a parked card, the link ticket written for it).
+- `POST /api/to-roadmap` `{"card": <a design card as served>, "target": <the Roadmap separator
+  nearest above the drop, as served, or null>}`: move the card's ticket out of the design into
+  `ROADMAP.md`.
 
   Both answer the board payload with `written`, the files written relative to the project root in
   the order written; 409 with `{"error": ...}` where refused, writing nothing; 500 with `{"error":
@@ -25,8 +29,9 @@ from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from typing import Any, Callable, Optional, TextIO
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
+from .. import __version__
 from ..dicerlib.textfile import read_text
 from .board import (
     PLAN_COLUMNS,
@@ -36,6 +41,7 @@ from .board import (
     move_to_roadmap,
     read_board,
     root_relative,
+    served_files,
     sha256,
     watched_files,
 )
@@ -156,6 +162,7 @@ class KanbanServer(ThreadingHTTPServer):
             "board": asdict(self._board),
             "plan_columns": list(PLAN_COLUMNS),
             "project": os.path.basename(self.root),
+            "docdicer_version": __version__,
         }
 
     def _poll(self) -> None:
@@ -205,6 +212,22 @@ def _asset(name: str) -> Optional[tuple[bytes, str]]:
     return None
 
 
+def _document(root: str, url_path: str) -> Optional[tuple[bytes, str]]:
+    """The file the board reads that url_path, percent-decoded (a byte that is not UTF-8 decoded as
+    a name holds it), names, and its content type; None where it names none or that file cannot be
+    read. The path is only matched against the files the board reads, never joined onto root as
+    given."""
+    try:
+        wanted = unquote(url_path[1:], errors="surrogateescape")
+        name = next((p for p in served_files(root) if p == wanted), None)
+        if name is None:
+            return None
+        text = read_text(os.path.join(root, name))
+    except OSError:
+        return None
+    return text.encode("utf-8", "surrogateescape"), "text/markdown; charset=utf-8"
+
+
 class _Handler(BaseHTTPRequestHandler):
     server: KanbanServer
 
@@ -212,6 +235,7 @@ class _Handler(BaseHTTPRequestHandler):
         "/api/to-design": KanbanServer.to_design,
         "/api/to-roadmap": KanbanServer.to_roadmap,
     }
+    _STOP = "/api/stop"
 
     def log_message(self, format: str, *args: Any) -> None:
         """Nothing is written per request."""
@@ -224,7 +248,7 @@ class _Handler(BaseHTTPRequestHandler):
             since = parse_qs(url.query).get("since")
             self._send_json(200, self.server.payload(since[0] if since else None))
             return
-        asset = _asset("index.html" if url.path == "/" else url.path[1:])
+        asset = _asset("index.html" if url.path == "/" else url.path[1:]) or _document(self.server.root, url.path)
         if asset is None:
             self._send_json(404, {"error": f"no such file: {url.path}"}, page=True)
             return
@@ -233,8 +257,9 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         if not self._local_host():
             return
-        action = self._ACTIONS.get(urlsplit(self.path).path)
-        if action is None:
+        path = urlsplit(self.path).path
+        action = self._ACTIONS.get(path)
+        if action is None and path != self._STOP:
             self._send_json(404, {"error": f"no such endpoint: {self.path}"})
             return
         if self.headers.get_content_type() != "application/json":
@@ -247,6 +272,12 @@ class _Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length))
             if not isinstance(body, dict):
                 raise BadRequest("the body must be a JSON object")
+            if action is None:
+                # Answered before stopping, as a move's answer cannot be: shutdown returns once
+                # serve_forever, on run_kanban's thread, has ended.
+                self._send_json(200, {})
+                self.server.shutdown()
+                return
             self._send_json(200, action(self.server, body))
         except (ValueError, BadRequest) as e:
             self._send_json(400, {"error": str(e)})
@@ -284,7 +315,7 @@ class _Handler(BaseHTTPRequestHandler):
 
 def run_kanban(project_dir: Optional[str], *, start: str, stdout: TextIO, stderr: TextIO) -> int:
     """Serve the board of the project project_dir is in, or with None the project the directory
-    start is in, until interrupted; 0 then, 2 where there is no project root, a file the board reads
+    start is in, until interrupted or stopped by `POST /api/stop`; 0 then, 2 where there is no project root, a file the board reads
     cannot be read at start or the port cannot be bound. A relative project_dir is taken from start."""
     directory = os.path.abspath(start if project_dir is None else os.path.join(start, project_dir))
     root = find_project_root(directory)

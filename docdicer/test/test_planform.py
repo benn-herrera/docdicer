@@ -1,6 +1,6 @@
-"""Unit tests for the plan-form and design-form reader: a plan's packages, title and release, a
-design's files and parts, the breaches of either form it reports, and the project's root and
-plan-file locations."""
+"""Unit tests for the layout, roadmap, plan-form and design-form reader: a plan's packages, title and
+release, a design's files and parts, a document's categories and tickets, the breaches of each form
+it reports, and the project's root and plan-file locations."""
 
 from pathlib import Path
 
@@ -10,13 +10,17 @@ from docdicer.kanban import planform
 from docdicer.kanban.planform import (
     ACTIVE_DESIGN,
     ACTIVE_PLAN,
+    PARKED_DESIGNS,
     BreachKind,
     active_document,
     design_files,
     find_project_root,
-    parked_entries,
+    parked_work,
     read_design,
+    read_file,
+    read_layout,
     read_plan,
+    read_roadmap,
 )
 
 _TABLE = "| Package | State |\n|---|---|\n"
@@ -482,7 +486,11 @@ def _design(tmp_path: Path, text: str):
             id="out-of-order",
         ),
         pytest.param("Intro\n\n# D\n\nText.\n", [(BreachKind.NO_DELTA, 3, "# D")], id="no-delta-at-the-h1"),
-        pytest.param("Intro\n\n### a\n", [(BreachKind.NO_DELTA, 1, "Intro")], id="no-delta-no-h1"),
+        pytest.param(
+            "Intro\n\n### a\n",
+            [(BreachKind.NO_DELTA, 1, "Intro"), (BreachKind.TICKET_OUTSIDE, 3, "### a")],
+            id="no-delta-no-h1",
+        ),
         pytest.param(
             "# D\n\n## SPEC delta\n\nStray.\n\n#### Deeper\n\n### a\n\nBody.\n",
             [(BreachKind.DELTA_CONTENT, 5, "Stray.")],
@@ -490,8 +498,18 @@ def _design(tmp_path: Path, text: str):
         ),
         pytest.param(
             "# D\n\n## SPEC delta\n\n### \n\n### [](x.md)\n\n### [x]()\n",
-            [(BreachKind.ENTRY_EMPTY, 5, "### "), (BreachKind.ENTRY_EMPTY, 7, "### [](x.md)")],
+            [(BreachKind.TICKET_EMPTY, 5, "### "), (BreachKind.TICKET_EMPTY, 7, "### [](x.md)")],
             id="entry-names-nothing",
+        ),
+        pytest.param(
+            "# D\n\n## SPEC delta\n\n### [](x) [](y)\n\n### ![](x)\n",
+            [(BreachKind.TICKET_EMPTY, 5, "### [](x) [](y)")],
+            id="entry-empty-once-links-reduced",
+        ),
+        pytest.param(
+            "# D\n\n## SPEC delta\n\n- **Old** item\n\n### a\n",
+            [(BreachKind.OLD_FORM_ITEM, 5, "- **Old** item")],
+            id="old-form-item-before-the-first-entry-is-the-layouts-breach-only",
         ),
     ],
 )
@@ -510,7 +528,7 @@ def test_design_breaches(tmp_path, text, breaches):
             id="fenced-headings-and-lines-ignored",
         ),
         pytest.param(
-            "# D\n\n### free\n\n## SPEC delta\n\n### a\n\n# Appendix\n\nFree again.\n", id="level-1-ends-a-delta"
+            "# D\n\n## SPEC delta\n\n### free\n\n### a\n\n# Appendix\n\nFree again.\n", id="level-1-ends-a-delta"
         ),
     ],
 )
@@ -518,8 +536,9 @@ def test_conforming_design(tmp_path, text):
     assert _design(tmp_path, text).breaches == []
 
 
-def _parts(design, root: Path) -> list[tuple[str, str, str, int, int]]:
-    return [(p.kind, p.heading, str(Path(p.path).relative_to(root)), p.first, p.end) for p in design.parts]
+def _parts(document, root: Path) -> list[tuple[str, str, str, str, int, int]]:
+    """(kind, heading, title, path from root, first, last) of each part."""
+    return [(p.kind, p.heading, p.title, str(Path(p.path).relative_to(root)), p.first, p.last) for p in document.parts]
 
 
 def test_design_parts_of_a_monolith(tmp_path):
@@ -529,11 +548,12 @@ def test_design_parts_of_a_monolith(tmp_path):
     )
     design = _design(tmp_path, text)
     assert _parts(design, tmp_path) == [
-        ("section", "Background", "design.md", 4, 8),
-        ("delta", "SPEC delta", "design.md", 8, 10),
-        ("entry", "[§1](SPEC.md)", "design.md", 10, 16),
-        ("delta", "Code delta", "design.md", 16, 18),
-        ("entry", "x.py", "design.md", 18, 19),
+        ("category", "Background", "Background", "design.md", 4, 4),
+        ("ticket", "free", "free", "design.md", 6, 6),
+        ("delta", "SPEC delta", "SPEC delta", "design.md", 8, 8),
+        ("entry", "[§1](SPEC.md)", "§1", "design.md", 10, 14),
+        ("delta", "Code delta", "Code delta", "design.md", 16, 16),
+        ("entry", "x.py", "x.py", "design.md", 18, 18),
     ]
 
 
@@ -548,9 +568,128 @@ def test_design_parts_of_a_diced_design(tmp_path):
     design = read_design(str(tmp_path / "d/entry-point.md"))
     assert design.breaches == []
     assert _parts(design, tmp_path) == [
-        ("delta", "SPEC delta", "d/entry-point.md", 2, 4),
-        ("entry", "a", "d/a.md", 0, 3),
+        ("delta", "SPEC delta", "SPEC delta", "d/entry-point.md", 2, 2),
+        ("entry", "a", "a", "d/a.md", 0, 2),
     ]
+
+
+def test_delta_content_in_a_later_file_of_a_diced_design(tmp_path):
+    _write(
+        tmp_path,
+        {
+            "d/entry-point.md": "# D\n\n## SPEC delta\n\nContents:\n\n- [a](a.md)\n",
+            "d/a.md": "Stray.\n\n### a\n",
+        },
+    )
+    design = read_design(str(tmp_path / "d/entry-point.md"))
+    assert _breaches(design, tmp_path) == [(BreachKind.DELTA_CONTENT, "d/a.md", 1, "Stray.")]
+
+
+def _layout(tmp_path: Path, text: str):
+    _write(tmp_path, {"doc.md": text})
+    return read_layout([read_file(str(tmp_path / "doc.md"))])
+
+
+@pytest.mark.parametrize("marker", ["-", "*", "+", "1.", "1)"])
+def test_an_old_form_item_outside_a_ticket_is_a_breach_for_each_list_marker(tmp_path, marker):
+    item = f"{marker} **Old** item"
+    layout = _layout(tmp_path, f"{item}\n\n## C\n\n{item}\n\n### t\n\n{item}\n")
+    assert _breaches(layout, tmp_path) == [
+        (BreachKind.OLD_FORM_ITEM, "doc.md", 1, item),
+        (BreachKind.OLD_FORM_ITEM, "doc.md", 5, item),
+    ]
+
+
+@pytest.mark.parametrize(
+    "text, breaches",
+    [
+        pytest.param("# R\n\n## C\n\n### t\n\nText.\n", [], id="conforming"),
+        pytest.param("Intro.\n\n- a plain item\n\n## C\n", [], id="free-lines-above-the-first-category"),
+        pytest.param("### t\n\n## C\n", [(BreachKind.TICKET_OUTSIDE, 1, "### t")], id="ticket-above-every-category"),
+        pytest.param(
+            "## C\n\n# Next\n\n### t\n", [(BreachKind.TICKET_OUTSIDE, 5, "### t")], id="level-1-ends-a-category"
+        ),
+        pytest.param(
+            "## C\n\n### t\n\n#### Detail\n\n- **x** y\n", [], id="level-4-heading-and-old-form-item-in-a-ticket"
+        ),
+        pytest.param("```\n### t\n- **x** y\n```\n\n## C\n", [], id="fenced-heading-and-item-free"),
+        pytest.param("## C\n\n-**x**\n  - **x**\n- x **y**\n", [], id="not-an-old-form-item"),
+        pytest.param(
+            "## C\n\n### [](x.md)\n\n###   \n",
+            [(BreachKind.TICKET_EMPTY, 3, "### [](x.md)"), (BreachKind.TICKET_EMPTY, 5, "###   ")],
+            id="ticket-title-empty-once-links-reduced",
+        ),
+    ],
+)
+def test_layout_breaches(tmp_path, text, breaches):
+    layout = _layout(tmp_path, text)
+    assert _breaches(layout, tmp_path) == [(kind, "doc.md", line, found) for kind, line, found in breaches]
+
+
+def test_layout_parts(tmp_path):
+    text = (
+        "# R\n\nIntro.\n\n## Features\n\nAbout.\n\n### [Link](x.md) helper\n\nText.\n\n#### Detail\n\nMore.\n\n\n"
+        "## Testing\n"
+    )
+    assert _parts(_layout(tmp_path, text), tmp_path) == [
+        ("category", "Features", "Features", "doc.md", 4, 6),
+        ("ticket", "[Link](x.md) helper", "Link helper", "doc.md", 8, 14),
+        ("category", "Testing", "Testing", "doc.md", 17, 17),
+    ]
+
+
+@pytest.mark.parametrize("name", ["index.md", "entry-point.md"])
+def test_a_roadmap_named_as_a_head_file_is_read_whole(tmp_path, name):
+    _write(tmp_path, {name: "# R\n\nContents:\n\n## C\n\n### t\n"})
+    roadmap = read_roadmap(str(tmp_path / name))
+    assert roadmap.breaches == []
+    assert [(p.kind, p.title) for p in roadmap.parts] == [("category", "C"), ("ticket", "t")]
+
+
+def test_a_category_holds_the_tickets_of_the_files_after_it(tmp_path):
+    _write(tmp_path, {"a.md": "## C\n", "b.md": "### t\n"})
+    layout = read_layout([read_file(str(tmp_path / name)) for name in ("a.md", "b.md")])
+    assert layout.breaches == []
+    assert [(p.kind, p.title) for p in layout.parts] == [("category", "C"), ("ticket", "t")]
+
+
+@pytest.mark.parametrize(
+    "first, following, runs_on",
+    [
+        pytest.param("## C\n\n### t\n\nkeep\n", "#### Detail\n\nmore\n", True, id="next-file-opens-with-deeper-text"),
+        pytest.param("## C\n\n### t\n\nkeep\n", "### u\n\nmore\n", False, id="next-file-opens-with-a-ticket"),
+        pytest.param("## C\n\n### t\n\nkeep\n", "\n\n", False, id="next-file-all-blank"),
+        pytest.param("## C\n\n### t\n\nkeep\n\n## D\n", "more\n", False, id="followed-in-its-file-by-a-category"),
+        pytest.param("## C\n\n### t\n\nkeep\n", None, False, id="roadmap"),
+    ],
+)
+def test_a_ticket_runs_on_past_its_file(tmp_path, first, following, runs_on):
+    _write(tmp_path, {"a.md": first, **({"b.md": following} if following is not None else {})})
+    if following is None:
+        layout = read_roadmap(str(tmp_path / "a.md"))
+    else:
+        layout = read_layout([read_file(str(tmp_path / name)) for name in ("a.md", "b.md")])
+    assert [p.runs_on for p in layout.parts if p.title == "t"] == [runs_on]
+
+
+@pytest.mark.parametrize(
+    "text, breaches",
+    [
+        pytest.param("# R\n\n## C\n", [], id="a-category"),
+        pytest.param(
+            "Intro.\n\n# R\n\n### t\n",
+            [(BreachKind.NO_CATEGORY, 3, "# R"), (BreachKind.TICKET_OUTSIDE, 5, "### t")],
+            id="no-category-at-the-first-level-1-heading",
+        ),
+        pytest.param("Intro.\n", [(BreachKind.NO_CATEGORY, 1, "Intro.")], id="no-category-no-h1"),
+        pytest.param("", [(BreachKind.NO_CATEGORY, 1, "")], id="empty"),
+        pytest.param("```\n## C\n```\n", [(BreachKind.NO_CATEGORY, 1, "```")], id="fenced-category-is-none"),
+    ],
+)
+def test_roadmap_breaches(tmp_path, text, breaches):
+    _write(tmp_path, {"roadmap.md": text})
+    roadmap = read_roadmap(str(tmp_path / "roadmap.md"))
+    assert _breaches(roadmap, tmp_path) == [(kind, "roadmap.md", line, found) for kind, line, found in breaches]
 
 
 @pytest.mark.parametrize(
@@ -593,24 +732,57 @@ def test_active_document(tmp_path, files, monolith, expected):
 
 
 @pytest.mark.parametrize(
-    "files, entries",
+    "files, work",
     [
         pytest.param(
-            [
-                "ROADMAP_DESIGNS/README.md",
-                "ROADMAP_DESIGNS/b.md",
-                "ROADMAP_DESIGNS/a.md",
-                "ROADMAP_DESIGNS/notes.txt",
-                "ROADMAP_DESIGNS/diced/entry-point.md",
-                "ROADMAP_DESIGNS/diced/leaf.md",
-                "ROADMAP_DESIGNS/loose/leaf.md",
-            ],
-            ["ROADMAP_DESIGNS/a.md", "ROADMAP_DESIGNS/b.md", "ROADMAP_DESIGNS/diced/entry-point.md"],
-            id="readme-excluded-diced-counted-once",
+            ["README.md", "b.md", "a.md", "notes.txt", "diced/entry-point.md", "diced/leaf.md", "loose/leaf.md"],
+            [("a", ["a.md"]), ("b", ["b.md"]), ("diced", ["diced/entry-point.md"])],
+            id="readme-excluded-diced-counted-once-no-topic-each-alone",
         ),
-        pytest.param(["ROADMAP.md"], [], id="no-parked-directory"),
+        pytest.param(["T_DESIGN.md"], [("T", ["T_DESIGN.md"])], id="design-makes-a-topic"),
+        pytest.param(["T_PLAN.md"], [("T", ["T_PLAN.md"])], id="plan-makes-a-topic"),
+        pytest.param(["T_PLAN_REVIEW.md"], [("T", ["T_PLAN_REVIEW.md"])], id="plan-review-makes-a-topic"),
+        pytest.param(["T_DESIGN.md", "T.md"], [("T", ["T.md", "T_DESIGN.md"])], id="name-equal-to-topic-joins"),
+        pytest.param(
+            ["T_notes.md", "T_PLAN.md", "T_PLAN_REVIEW.md"],
+            [("T", ["T_PLAN.md", "T_PLAN_REVIEW.md", "T_notes.md"])],
+            id="name-opening-with-topic-joins-in-path-order",
+        ),
+        pytest.param(
+            ["A_DESIGN.md", "A_B_DESIGN.md", "A_B_X.md"],
+            [("A", ["A_DESIGN.md"]), ("A_B", ["A_B_DESIGN.md", "A_B_X.md"])],
+            id="longest-topic-wins",
+        ),
+        pytest.param(
+            ["T_DESIGN.md", "T_PLAN/entry-point.md"],
+            [("T", ["T_DESIGN.md", "T_PLAN/entry-point.md"])],
+            id="tree-joins-by-directory-name",
+        ),
+        pytest.param(["T_DESIGN.md", "Tx.md"], [("T", ["T_DESIGN.md"]), ("Tx", ["Tx.md"])], id="no-topic-alone"),
     ],
 )
-def test_parked_entries(tmp_path, files, entries):
-    _write(tmp_path, {name: "# x\n" for name in files})
-    assert parked_entries(str(tmp_path)) == [str(tmp_path / e) for e in entries]
+def test_parked_work(tmp_path, files, work):
+    parked = tmp_path / PARKED_DESIGNS
+    _write(parked, {name: "# x\n" for name in files})
+    assert [
+        (w.name, [Path(f).relative_to(parked).as_posix() for f in w.files]) for w in parked_work(str(tmp_path))
+    ] == work
+
+
+def test_no_parked_directory_no_parked_work(tmp_path):
+    _write(tmp_path, {"ROADMAP.md": "# x\n"})
+    assert parked_work(str(tmp_path)) == []
+
+
+def test_heading_anchors(tmp_path):
+    _write(tmp_path, {"a.md": "# T\n\n## A\n\n```\n## A\n```\n\n   ## A\n\n## A\n"})
+    headings = planform.file_headings(read_file(str(tmp_path / "a.md")))
+    # the fenced heading is not counted; the indented one is no board heading but counts toward repeats
+    assert [(h.line, h.anchor) for h in headings] == [(1, "t"), (3, "a"), (11, "a-2")]
+
+
+def test_package_heading(tmp_path):
+    plan = _read(tmp_path, "# Plan\n\n## Status\n\n" + _TABLE + "| P1 | |\n| P2 | |\n\n### P1 — First\n")
+    first, untitled = plan.packages
+    assert (first.heading.line, first.heading.level, first.heading.anchor) == (10, 3, "p1--first")
+    assert untitled.heading is None

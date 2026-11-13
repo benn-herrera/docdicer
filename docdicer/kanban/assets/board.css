@@ -60,6 +60,11 @@ h1 { font-size: 1.1rem; margin: 0; }
 #alert { color: var(--alert); }
 
 button { font: inherit; }
+#stop { font-size: 0.85rem; }
+
+/* A card's links keep the card's colours; the underline marks them, the accent shows on hover. */
+.card a { color: inherit; }
+.card a:hover, .card a:focus-visible { color: var(--accent); }
 
 #board {
   flex: 1;
@@ -114,13 +119,22 @@ button { font: inherit; }
 .column.plan { background: none; border-color: var(--line); }
 .column.plan .card, .card.entry { background: none; }
 
-/* A delta's heading: a full-width band, no border or corners, so it reads as a divider between
-   cards rather than as one. */
+/* A category's or delta's heading: a full-width band, no border or corners, so it reads as a divider
+   between cards rather than as one. */
 .separator {
   margin: 0.3rem -0.5rem 0;
   padding: 0.2rem 0.5rem;
   background: var(--line);
   font-weight: 600;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+/* Content outside the layout: a dashed outline, a shape no card has, and never draggable. */
+.layout-notice {
+  padding: 0.3rem 0.5rem;
+  border: 1px dashed var(--alert);
+  border-radius: 0.3rem;
   font-size: 0.85rem;
   overflow-wrap: anywhere;
 }

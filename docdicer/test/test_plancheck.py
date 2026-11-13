@@ -1,5 +1,5 @@
-"""Unit tests for check_plan and check_design: which document each checks with no argument, their exit
-statuses, and the values each breach message carries."""
+"""Unit tests for check_plan, check_design and check_roadmap: which document each checks with no
+argument, their exit statuses, and the values each breach message carries."""
 
 import errno
 import io
@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 
 from docdicer.kanban import plancheck, planform
-from docdicer.kanban.plancheck import check_design, check_plan
-from docdicer.kanban.planform import BreachKind, read_design, read_plan
+from docdicer.kanban.plancheck import check_design, check_plan, check_roadmap
+from docdicer.kanban.planform import BreachKind, read_design, read_plan, read_roadmap
 
 _TABLE = "| Package | State | Rating |\n|---|---|---|\n"
 _CONFORMING = "# Plan\n\n## Status\n\n" + _TABLE + "| P1 | landed | expert |\n"
@@ -229,3 +229,91 @@ def test_an_empty_found_line_is_named(tmp_path):
     assert status == 1
     (line,) = err.splitlines()
     assert "found an empty line" in line
+
+
+_ROADMAP_BREACHING = "# Roadmap\n"
+
+
+def _run_roadmap(roadmap, start: str = "") -> tuple[int, str, str]:
+    """check_roadmap's status, stdout and stderr, run from start."""
+    out, err = io.StringIO(), io.StringIO()
+    status = check_roadmap(roadmap, start=start, stdout=out, stderr=err)
+    return status, out.getvalue(), err.getvalue()
+
+
+def test_default_is_the_projects_roadmap(tmp_path):
+    project = tmp_path / "proj"
+    (project / ".git").mkdir(parents=True)
+    (project / "sub").mkdir()
+    _write(project, {"ROADMAP.md": _ROADMAP_BREACHING})
+
+    status, out, err = _run_roadmap(None, start=str(project / "sub"))
+
+    assert status == 1
+    assert str(project / "ROADMAP.md") in out
+    assert str(project / "ROADMAP.md") in err
+
+
+@pytest.mark.parametrize(
+    "files",
+    [
+        pytest.param(
+            {"ROADMAP/entry-point.md": _ROADMAP_BREACHING, "ACTIVE_DESIGN.md": _ROADMAP_BREACHING}, id="absent"
+        ),
+        pytest.param({"ROADMAP.md/entry-point.md": _ROADMAP_BREACHING}, id="a-directory"),
+    ],
+)
+def test_no_roadmap_passes(tmp_path, files):
+    (tmp_path / ".git").mkdir()
+    _write(tmp_path, files)
+
+    status, out, err = _run_roadmap(None, start=str(tmp_path))
+
+    assert (status, err) == (0, "")
+    assert str(tmp_path) in out
+
+
+def test_no_project_root_is_refused_for_a_roadmap(tmp_path, monkeypatch):
+    _write(tmp_path, {"ROADMAP.md": _ROADMAP_BREACHING})
+    monkeypatch.setattr(planform.os.path, "lexists", lambda path: False)
+
+    status, out, err = _run_roadmap(None, start=str(tmp_path))
+
+    assert (status, out) == (2, "")
+    assert str(tmp_path) in err
+    assert "docdicer check-roadmap" in err
+
+
+def test_a_roadmap_that_cannot_be_read_is_named(tmp_path):
+    roadmap = tmp_path / "roadmap.md"
+    roadmap.mkdir()
+
+    status, out, err = _run_roadmap(str(roadmap))
+
+    assert (status, out) == (2, "")
+    assert str(roadmap) in err
+
+
+@pytest.mark.parametrize(
+    "text, kind",
+    [
+        pytest.param("### t\n\n## C\n", BreachKind.TICKET_OUTSIDE, id="ticket-outside"),
+        pytest.param("## C\n\n- **Old** item\n", BreachKind.OLD_FORM_ITEM, id="old-form-item"),
+        pytest.param("## C\n\n### \n", BreachKind.TICKET_EMPTY, id="ticket-empty"),
+        pytest.param("# Roadmap\n", BreachKind.NO_CATEGORY, id="no-category"),
+    ],
+)
+def test_roadmap_breach_message_carries_file_line_found_and_accepted(tmp_path, text, kind):
+    _write(tmp_path, {"roadmap.md": text})
+    roadmap = str(tmp_path / "roadmap.md")
+    (breach,) = read_roadmap(roadmap).breaches
+    assert breach.kind == kind
+
+    status, out, err = _run_roadmap(roadmap)
+
+    assert status == 1
+    (line,) = err.splitlines()
+    assert f"{roadmap}:{breach.line}" in line
+    assert breach.found in line
+    assert breach.accepted in line
+    assert roadmap in out

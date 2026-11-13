@@ -1,4 +1,4 @@
-"""Unit tests for linkrewrite: what a link is, section references, link targets and their restoration."""
+"""Unit tests for linkrewrite: section references, link targets and their restoration."""
 
 import io
 from pathlib import Path
@@ -6,7 +6,7 @@ from typing import Optional
 
 import pytest
 
-from docdicer.dicerlib.linkrewrite import Linker, LinkMap, Tree, link_targets, rel
+from docdicer.dicerlib.linkrewrite import Linker, LinkMap, Tree, rel
 from docdicer.dicerlib.outline import Outline, plan_sections
 
 # Diced as: entry-point.md (1-2), 1-alpha.md (3-5), 2-beta/index.md (6), 2-beta/the-walk-step.md (7),
@@ -42,28 +42,6 @@ def _linker(tmp_path: Path, link_map: Optional[LinkMap] = None) -> Linker:
         link_map=LinkMap() if link_map is None else link_map,
     )
     return Linker(Outline(sections), tree, DOC)
-
-
-@pytest.mark.parametrize(
-    "line, targets",
-    [
-        pytest.param("see [a](b.md) here", ["b.md"], id="link"),
-        pytest.param("![alt](img.png)", ["img.png"], id="image"),
-        pytest.param("[a](b.md) and [c](d.md)", ["b.md", "d.md"], id="two-in-order"),
-        pytest.param("[a](b(c).md)", ["b(c"], id="target-ends-at-first-paren"),
-        pytest.param('[a](b.md "title")', ['b.md "title"'], id="title-not-interpreted"),
-        pytest.param("[a](<b c.md>)", ["<b c.md>"], id="angle-brackets-not-interpreted"),
-        pytest.param("\\[a](b.md)", ["b.md"], id="escape-not-interpreted"),
-        pytest.param("[a][ref] and [ref]: b.md", [], id="reference-style-not-a-link"),
-        pytest.param("<https://e.com/x>", [], id="autolink-not-a-link"),
-        pytest.param("[a] (b.md)", [], id="space-before-paren"),
-        pytest.param("`[a](b.md)` and [c](d.md)", ["d.md"], id="code-span"),
-        pytest.param("``x ` [a](b.md)`` [c](d.md)", ["d.md"], id="code-span-closes-on-same-length-run"),
-        pytest.param("x ` [a](b.md)", ["b.md"], id="unmatched-backtick-literal"),
-    ],
-)
-def test_link_targets(line: str, targets: list[str]) -> None:
-    assert link_targets(line) == targets
 
 
 @pytest.mark.parametrize(

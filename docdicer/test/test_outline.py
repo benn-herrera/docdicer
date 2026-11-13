@@ -100,6 +100,52 @@ def test_split_levels_and_parents():
     ]
 
 
+@pytest.mark.parametrize(
+    "deepest, layout",
+    [
+        pytest.param(
+            4,
+            [
+                ("entry-point.md", None, 1, 1),
+                ("a/index.md", "entry-point.md", 2, 2),
+                ("a/b/index.md", "a/index.md", 3, 3),
+                ("a/b/c.md", "a/b/index.md", 4, 4),
+                ("a/d.md", "a/index.md", 5, 5),
+                ("e/index.md", "entry-point.md", 6, 6),
+                ("e/f.md", "e/index.md", 7, 7),
+            ],
+            id="level-4",
+        ),
+        pytest.param(
+            3,
+            [
+                ("entry-point.md", None, 1, 1),
+                ("a/index.md", "entry-point.md", 2, 2),
+                ("a/b.md", "a/index.md", 3, 4),
+                ("a/d.md", "a/index.md", 5, 5),
+                ("e.md", "entry-point.md", 6, 7),
+            ],
+            id="level-3",
+        ),
+        pytest.param(
+            2,
+            [
+                ("entry-point.md", None, 1, 1),
+                ("a.md", "entry-point.md", 2, 5),
+                ("e.md", "entry-point.md", 6, 7),
+            ],
+            id="level-2",
+        ),
+    ],
+)
+def test_headings_deeper_than_the_split_level_are_text(deepest, layout):
+    lines = ["# Doc", "## A", "### B", "#### C", "### D", "## E", "#### F"]
+    err = io.StringIO()
+    sections, ok = plan_sections(lines, err=err, deepest=deepest)
+    assert ok and err.getvalue() == ""
+    assert _layout(sections) == layout
+
+
 def test_parent_is_root_without_a_lower_level_heading():
     sections, ok, _ = _plan(["### X", "text", "## Y"])
     assert ok
@@ -158,6 +204,23 @@ def test_numbers_titles_and_names():
         ("notes.md", "", "Notes"),
         ("4.1.2-deep.md", "4.1.2", "Deep"),
     ]
+
+
+def test_headings_holding_links_are_planned_from_their_plain_text():
+    lines = [
+        "# Doc",
+        "## [1. Alpha](a.md)",
+        "### [Plan Status Form](x)",
+        "## 2. Compare [§1](1-alpha/index.md) with [the first](y)",
+    ]
+    sections, ok, err = _plan(lines)
+    assert ok and err == []
+    assert [(s.path, s.number, s.title) for s in sections[1:]] == [
+        ("1-alpha/index.md", "1", "Alpha"),
+        ("1-alpha/plan-status-form.md", "", "Plan Status Form"),
+        ("2-compare-1-with-the-first.md", "2", "Compare §1 with the first"),
+    ]
+    assert Outline(sections).link_text(2) == "§1 Plan Status Form"
 
 
 def test_leading_spaces_after_the_hash_run_are_ignored():

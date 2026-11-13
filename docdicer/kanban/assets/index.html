@@ -8,13 +8,14 @@
 </head>
 <body>
 <header>
-  <h1 id="page-title">kanban</h1>
+  <h1 id="page-title" tabindex="-1">kanban</h1>
   <span id="release"></span>
   <span id="hardening" class="tag" hidden>hardening</span>
-  <span id="connection" aria-live="polite"></span>
+  <span id="connection" role="status" aria-labelledby="connection"></span>
+  <button id="stop" type="button">Stop server</button>
 </header>
 <div id="messages">
-  <p id="notice" role="status"></p>
+  <p id="move-message" role="status"></p>
   <p id="alert" role="alert"></p>
 </div>
 <main id="board"></main>

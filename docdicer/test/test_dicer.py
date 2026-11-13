@@ -1,22 +1,20 @@
 r"""End-to-end tests for docdicer.
 
 Each case under data/ is one test: the CLI runs as a subprocess in a copy of the case's input/,
-made in the test's tmp_path, with the arguments in `args` (one per line) and the environment in
-`env` (KEY=VALUE lines; DICER_KEEP is otherwise unset). The exit status and every file of
-expected/tree/ must match byte for byte. expected/names asserts the values the output carries,
-never its wording: each of its lines is an entry `<stream>[\t<name>...]`, <stream> being stdout or
-stderr, and each entry stands for one line of that stream. A stream must end in a newline unless
-empty, and must have exactly as many lines as it has entries, each entry given a distinct line it
-matches; a stream with no entries is empty. An entry with no names matches any line; otherwise its
-names are found in the line left to right, each as a whole token (no ASCII letter or digit beside
-it, nor a `.` or `-` joined to one), compared as UTF-8 bytes with surrogateescape.
+made in the test's tmp_path, with the arguments in `args` (one per line). The exit status and
+every file of expected/tree/ must match byte for byte. expected/names asserts the values the output
+carries, never its wording: each of its lines is an entry `<stream>[\t<name>...]`, <stream> being
+stdout or stderr, and each entry stands for one line of that stream. A stream must end in a newline
+unless empty, and must have exactly as many lines as it has entries, each entry given a distinct
+line it matches; a stream with no entries is empty. An entry with no names matches any line;
+otherwise its names are found in the line left to right, each as a whole token (no ASCII letter or
+digit beside it, nor a `.` or `-` joined to one), compared as UTF-8 bytes with surrogateescape.
 
-A `list` case instead matches expected/stdout byte for byte, its rows being contract, and its
-entries name stderr only. COLUMNS is set wide so that argparse never wraps a usage line. Cases are
-written from SPEC.md.
+COLUMNS is set wide so that argparse never wraps a usage line. Cases are written from SPEC.md.
 
 Each case that dices without a map and exits 0 is also a round-trip test: its tree, undiced and
-then diced again from the same run directory, comes back byte for byte.
+then diced again from the same run directory at the case's `--split-level`, comes back byte for
+byte.
 """
 
 import os
@@ -38,14 +36,7 @@ def _files(root: Path) -> dict[str, bytes]:
 
 
 def _case_env(case: Path) -> dict[str, str]:
-    env = {k: v for k, v in os.environ.items() if k != "DICER_KEEP"}
-    env["COLUMNS"] = "1000"
-    env_file = case / "env"
-    if env_file.exists():
-        for line in env_file.read_text(encoding="utf-8").splitlines():
-            key, _, value = line.partition("=")
-            env[key] = value
-    return env
+    return {**os.environ, "COLUMNS": "1000"}
 
 
 def _cases() -> list[Path]:
@@ -56,12 +47,20 @@ def _args(case: Path) -> list[str]:
     return (case / "args").read_text(encoding="utf-8").splitlines()
 
 
+def _split_level_apart(args: list[str]) -> tuple[list[str], list[str]]:
+    """args' `--split-level <level>`, empty where they hold none, and the other args in order."""
+    if "--split-level" not in args:
+        return [], args
+    at = args.index("--split-level")
+    return args[at : at + 2], args[:at] + args[at + 2 :]
+
+
 def _round_trip_cases() -> list[Path]:
     return [
         case
         for case in _cases()
         if _args(case)[0] == "dice-doc"
-        and len(_args(case)) == 3
+        and len(_split_level_apart(_args(case))[1]) == 3
         and (case / "expected" / "exit").read_text(encoding="utf-8") == "0\n"
     ]
 
@@ -155,10 +154,7 @@ def test_cases(case: Path, tmp_path: Path) -> None:
     expected = case / "expected"
     assert f"{proc.returncode}\n" == (expected / "exit").read_text(encoding="utf-8")
     assert _files(run) == _files(expected / "tree")
-    streams = {"stdout": proc.stdout, "stderr": proc.stderr}
-    if args[0] == "list":
-        assert streams.pop("stdout") == (expected / "stdout").read_bytes()
-    _assert_names(expected / "names", streams)
+    _assert_names(expected / "names", {"stdout": proc.stdout, "stderr": proc.stderr})
 
 
 def test_round_trip_cases_exist() -> None:
@@ -168,13 +164,14 @@ def test_round_trip_cases_exist() -> None:
 @pytest.mark.parametrize("case", _round_trip_cases(), ids=lambda case: case.name)
 def test_undice_then_dice_reproduces_the_tree(case: Path, tmp_path: Path) -> None:
     """A tree the case dices without a map: undiced, then diced again from the same run directory,
-    it comes back byte for byte, both runs exiting 0."""
+    both at the case's split level, it comes back byte for byte, both runs exiting 0."""
     run = tmp_path / "run"
     shutil.copytree(case / "expected" / "tree", run, symlinks=True)
-    out, env = _args(case)[2], _case_env(case)
-    undiced = _docdicer(run, ["undice", out, "mono.md"], env)
+    split_level, args = _split_level_apart(_args(case))
+    out, env = args[2], _case_env(case)
+    undiced = _docdicer(run, ["undice", *split_level, out, "mono.md"], env)
     assert undiced.returncode == 0, undiced.stderr
     (run / out).rename(run / "diced")
-    rediced = _docdicer(run, ["dice-doc", "mono.md", out], env)
+    rediced = _docdicer(run, ["dice-doc", *split_level, "mono.md", out], env)
     assert rediced.returncode == 0, rediced.stderr
     assert _files(run / out) == _files(run / "diced")

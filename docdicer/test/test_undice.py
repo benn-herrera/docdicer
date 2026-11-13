@@ -13,7 +13,7 @@ from typing import Optional
 import pytest
 
 from docdicer.dicerlib.dicedoc import _all_reproduced
-from docdicer.dicerlib.outline import plan_sections
+from docdicer.dicerlib.outline import DEEPEST_SPLIT_LEVEL, plan_sections
 
 # Planned as entry-point.md (line 1), alpha.md (lines 2-3), beta.md (line 4).
 MONOLITH = ["# Doc", "## Alpha", "text", "## Beta"]
@@ -55,7 +55,7 @@ def test_all_reproduced(
     assert ok
     err = io.StringIO()
 
-    passed = _all_reproduced(str(out), sections, reads, err=err)
+    passed = _all_reproduced(str(out), sections, reads, err=err, deepest=DEEPEST_SPLIT_LEVEL)
 
     assert passed == (not reports)
     reported = [re.findall(r"\S+\.md\b", line) for line in err.getvalue().splitlines()]

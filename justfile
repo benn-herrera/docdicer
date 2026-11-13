@@ -39,19 +39,27 @@ tag: _tag-clean _venv
 # note: uses python3 not VENV_PYTHON to ensure zero dependencies
 [doc("run kanban board for this project using this code base's version (blocks with running http server)")]
 kanban:
-  PYTHONPATH={{PROJECT_ROOT}} python3 -m docdicer kanban
+  @just dev-dd kanban
 
 [doc("run doc links check using this conde base's version")]
 check-links:
-  PYTHONPATH={{PROJECT_ROOT}} python3 -m docdicer check-links *.md
+  @just dev-dd check-links *.md
 
 [doc("run ACTIVE_PLAN format compliance check using this conde base's version")]
 check-plan:
-  PYTHONPATH={{PROJECT_ROOT}} python3 -m docdicer check-plan
+  @just dev-dd check-plan
 
 [doc("run ACTIVE_DESIGN final-form check using this code base's version")]
 check-design:
-  PYTHONPATH={{PROJECT_ROOT}} python3 -m docdicer check-design
+  @just dev-dd check-design
+
+[doc("run ROADMAP format compliance check using this code base's version")]
+check-roadmap:
+  @just dev-dd check-roadmap
+
+[doc("run this code base's docdicer with the given arguments, e.g.: just dev-dd dice-doc big.md out/")]
+dev-dd *args:
+  PYTHONPATH={{PROJECT_ROOT}} python3 -m docdicer {{args}}
 
 # Venv layout differs by OS: POSIX puts executables in .venv/bin, Windows in
 # .venv/Scripts with .exe suffixes. Resolved here via just's os() builtin.

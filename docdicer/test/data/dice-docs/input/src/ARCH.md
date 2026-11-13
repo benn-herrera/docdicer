@@ -4,10 +4,14 @@ How the [spec](SPEC.md) is met.
 
 ## Storage layer
 
-- **Write path.** appends then syncs
-  and then acknowledges.
-- **Read path:** reads the
-  latest commit.
+### Write path
+
+appends then syncs
+and then acknowledges.
+### Read path
+
+reads the
+latest commit.
 
 ## Other
 
