@@ -289,3 +289,15 @@ kbase's own `dice-docs` justfile target:
 
 The leaves under `PROJECT_DOCS/` are now the source; the root `SPEC.md`, `ARCHITECTURE.md`,
 `CONVENTIONS.md` and `THESIS.md` are pointers to them.
+
+## Third Party Acknowledgements
+
+- **kanban from markdown** - idea from Jason Coleman (https://github.com/sangrail)
+- **pytest** (the pytest developers, MIT): runs the test suite; installed into this repository's
+  `.venv` by `just test`.
+- **black** (Łukasz Langa and contributors, MIT): formats the Python source; installed into `.venv`
+  by `just test` and run by `just format-python`.
+- **isort** (Timothy Crosley and contributors, MIT): sorts Python imports; installed and run the same
+  way.
+- **flake8** (Tarek Ziadé and contributors, Python Code Quality Authority, MIT): lints the Python
+  source; installed and run the same way.
