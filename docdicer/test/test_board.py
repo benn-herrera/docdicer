@@ -174,6 +174,12 @@ _DELTA_DICED = {
     "ACTIVE_DESIGN/spec-delta.md": "## SPEC delta\n\nstray\n\n### [§11.2](../SPEC.md#x)\n\nNew row.\n",
     "ACTIVE_DESIGN/code-delta.md": "## Code delta\n\n### board.py\n\nKind.\n",
 }
+# Two files holding the same delta title: the board draws both bands, though the design is in breach.
+_TWO_SPEC_DELTAS = {
+    "ACTIVE_DESIGN/entry-point.md": "# D\n\nContents:\n\n- [One](one.md)\n- [Two](two.md)\n",
+    "ACTIVE_DESIGN/one.md": "## SPEC delta\n\n### One\n\nFirst.\n",
+    "ACTIVE_DESIGN/two.md": "## SPEC delta\n\n### Two\n\nSecond.\n",
+}
 
 
 @pytest.mark.parametrize(
@@ -200,6 +206,14 @@ def test_deltas_are_separators_over_entry_cards(tmp_path, files, paths):
         ("entry", "board.py", "Kind."),
     ]
     assert [c.path for c in board.design] == paths
+
+
+def test_same_titled_bands_are_told_apart_by_their_file(tmp_path):
+    board = read_board(_project(tmp_path, _TWO_SPEC_DELTAS))
+    bands = [c for c in board.design if c.kind == "delta"]
+    assert [c.title for c in bands] == ["SPEC delta", "SPEC delta"]
+    assert [c.path for c in bands] == ["ACTIVE_DESIGN/one.md", "ACTIVE_DESIGN/two.md"]
+    assert [c.occurrence for c in bands] == [0, 0]
 
 
 @pytest.mark.parametrize("kind", ["entry", "delta", "category"])

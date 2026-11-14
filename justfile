@@ -31,35 +31,35 @@ _tag-clean:
 tag: _tag-clean _venv
   #!/usr/bin/env bash
   set -euo pipefail
-  ver=v$({{DD_PYTHON}} -m docdicer --version)
+  ver=v$(just dev-dd --version)
   [[ "${ver}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { printf 'tag: version %s is not v<major>.<minor>.<patch>\n' "${ver}" >&2; exit 1; }
   GPG_TTY=$(tty) git tag -s "${ver}" -m "release ${ver}"
   git tag -v "${ver}"
 
 # note: uses python3 not VENV_PYTHON to ensure zero dependencies
 [doc("run kanban board for this project using this code base's version (blocks with running http server)")]
-kanban:
+dev-kanban:
   @just dev-dd kanban
 
 [doc("run doc links check using this conde base's version")]
-check-links:
-  @just dev-dd check-links *.md
+dev-check-links:
+  @just dev-dd check-links *.md docs
 
-[doc("run ACTIVE_PLAN format compliance check using this conde base's version")]
-check-plan:
+[doc("run ACTIVE_PLAN format compliance check using this code base's version")]
+dev-check-plan:
   @just dev-dd check-plan
 
 [doc("run ACTIVE_DESIGN final-form check using this code base's version")]
-check-design:
+dev-check-design:
   @just dev-dd check-design
 
 [doc("run ROADMAP format compliance check using this code base's version")]
-check-roadmap:
+dev-check-roadmap:
   @just dev-dd check-roadmap
 
 [doc("run this code base's docdicer with the given arguments, e.g.: just dev-dd dice-doc big.md out/")]
 dev-dd *args:
-  PYTHONPATH={{PROJECT_ROOT}} python3 -m docdicer {{args}}
+  @PYTHONPATH={{PROJECT_ROOT}} python3 -m docdicer {{args}}
 
 # Venv layout differs by OS: POSIX puts executables in .venv/bin, Windows in
 # .venv/Scripts with .exe suffixes. Resolved here via just's os() builtin.
@@ -82,15 +82,9 @@ _venv:
     {{VENV_PYTHON}} -m pip install "pytest>=8.4" "isort>=6.1" "black>=25.11" "flake8>=7.3"
   fi
 
-DEVPRO_VER := "0.17.0"
-PYTHON := "\"" + VENV + "/bin/python" + "\""
-DEVPRO := "\"" + VENV + "/bin/devpro" + "\""
-agents: _venv
-  #!/usr/bin/env bash
-  set -euo pipefail
-  [[ -x {{DEVPRO}} && "$({{DEVPRO}} --version)" == "{{DEVPRO_VER}}" ]] || \
-    {{PYTHON}} -m pip install "git+https://github.com/benn-herrera/devpro@v{{DEVPRO_VER}}"
-  {{DEVPRO}} install . --harness=opencode
-  {{DEVPRO}} install . --harness=claude
+agents:
+  @command -v devpro > /dev/null || { echo 'devpro not installed. run `brew install benn-herrera/tap/devpro`' }
+  devpro install . --harnes=claude
+  devpro install . --harness=opencode
 
 import? '.opencode/plugins/devpro/skills/docdicer/tools/runner-snippets/docdicer.just'

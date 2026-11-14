@@ -1,8 +1,12 @@
 # SPEC – docdicer
 
-Consumer-facing behaviours and outcomes; any implementation that satisfies them is valid.
+Consumer-facing behaviors and outcomes
 
-File names, the files a command writes and their content, exit statuses and the stream each message goes to are contract. Message wording is not: the messages below give current wording. What is contract is which fault or result each message reports, the values it carries, shown in `<angle brackets>` (a file, a line, a heading, a count), and the remedy it names.
+Must-see:
+
+- Any implementation in any language that satisfies this SPEC is valid
+- No project mechanisms or code structure are put forth — that belongs to ARCHITECTURE
+- No project-specific process is dictated — that belongs to CONVENTIONS
 
 ## §1 What docdicer is
 
@@ -44,6 +48,8 @@ The program is the command `docdicer <command> [arguments]`.
 **Text.** Files are read and written as UTF-8 with lines split on `\n` only. A line's other bytes, including `\r` and bytes that are not valid UTF-8, are preserved from input to output. Every line written is terminated by `\n`, so a file whose last line was unterminated gains a final newline.
 
 ## §3 The diced tree
+
+File names, the files a command writes and their content, exit statuses and the stream each message goes to are contract. Message wording is not: the messages below give current wording. What is contract is which fault or result each message reports, the values it carries, shown in `<angle brackets>` (a file, a line, a heading, a count), and the remedy it names.
 
 ### §3.1 Which headings split
 
@@ -521,6 +527,8 @@ The board has six columns, left to right: Roadmap, Design, Drafted, Dispatchable
 
 **Design cards.** The board reads the active design in the layout (§8.8), in document order (§8.7); in a diced design each heading is read from the file that holds it. A category, a delta among them, is not a card: its heading is a separator drawn in its place among the cards. Each ticket is a card titled by its title over the ticket's text; a link ticket's (§11.1) is a link ticket's card (**Card links**). A ticket in a delta is an **entry card**. Lines above the first category, and lines of a category before its first ticket, are not shown. Cards and separators follow document order.
 
+**Collapsed categories.** Double-clicking a separator band — a category's, a delta's, or the `ROADMAP_DESIGNS` band's — collapses the cards from that band to the next separator band or the column's end, and doing so again shows them; the band stays, its marker shows the collapsed state in place of the expanded band's, and every card outside the range keeps its place. A band takes keyboard focus, toggles with Enter or Space, keeps that focus across the toggle, and reports whether it is expanded. A collapse belongs to the page and to no file (§11.6): a redraw keeps it, a reload loses it, and a card added to a collapsed category, by a move (§11.3) or by an edit, stays hidden until the category expands.
+
 **Content outside the layout.** Each breach §8.8 reports in `ROADMAP.md`, and each breach of the layout in the active design, is shown as a notice at the head of its document's column, naming its file, as a path from the project root, its line, the text found and the form accepted there.
 
 **Work package cards.** A card shows the package's ID, its title, its rating word (`mechanical` or `expert`) or that it is unrated, and its lifetime where the status table has a `Lifetime` column, matched without regard to case. A package's title is as §8.6 Terms defines it; an untitled package shows untitled. A plan whose table has no `Rating` column is still shown, its packages unrated. Cards in a plan column follow the status table's row order.
@@ -597,8 +605,8 @@ A document that cannot be read as a file while the server runs is named on stder
 
 ### §11.6 The board stores nothing
 
-The board keeps no UI state and writes no file, in the project or elsewhere, for itself. A restarted server shows the files as they then are, and nothing else.
+The board keeps no state beyond the page and writes no file, in the project or elsewhere, for itself. A redraw keeps what the page holds; a reload loses it. A restarted server shows the files as they then are, and nothing else.
 
 ### §11.7 What `kanban` does not do
 
-It makes no inference call, runs no subprocess, reads no git history and fetches nothing from the network; every write is a fixed transformation of file content (§11.3). It has no filters, pull-downs, search, sorting or custom drop affordances. The board's only writes are the moves of §11.3. It does not reorder tickets, move a ticket between categories of one document, or edit any ticket's or category's text. The project root is found by looking at the file system (§8.6).
+It makes no inference call, runs no subprocess, reads no git history and fetches nothing from the network; every write is a fixed transformation of file content (§11.3). Its only state the user sets is a band's collapse (§11.2); it has no filters, pull-downs, search, sorting or custom drop affordances. The board's only writes are the moves of §11.3. It does not reorder tickets, move a ticket between categories of one document, or edit any ticket's or category's text. The project root is found by looking at the file system (§8.6).

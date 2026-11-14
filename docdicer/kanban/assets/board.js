@@ -2,7 +2,8 @@
 
 // The board page. Everything shown comes from the server's payload (GET /api/board); every action
 // is a POST whose effect reaches the page through the same long poll, so the page holds no state of
-// its own beyond the version it last drew, the drag under way and whether the server answers.
+// its own beyond the version it last drew, the payload last drawn and the payload deferred during a
+// drag, the drag under way, whether the server answers and the bands it has collapsed.
 
 const log = (level, message, context = {}) => console[level]({ level, message, ...context });
 
@@ -16,6 +17,8 @@ const boardEl = $("board");
 let dragging = null; // {kind: "roadmap" | "parked" | "design", card} while a drag runs
 let deferred = null; // a payload that arrived during the drag, shown when it ends
 let drawn = null; // the version of the payload on the page; null after a failed poll
+let lastPayload = null; // the payload last drawn, which a band's collapse redraws the columns from
+const collapsed = new Set(); // the keys of the bands collapsed (bandKey), held by the page alone
 let stopped = false; // the server has not answered STOPPED_AFTER polls in a row: no drag starts
 let ended = false; // the server was stopped from the page: polling has ended for good
 const dragInfo = new WeakMap(); // card element -> its drag info
@@ -25,6 +28,21 @@ const STOPPED_AFTER = 3;
 const STOPPED_TEXT = "server stopped: restart docdicer kanban and open the URL it prints";
 const NOT_DRAWN = "board not drawn: ";
 const PARKED_BAND = "ROADMAP_DESIGNS";
+// The payload carries no card for the ROADMAP_DESIGNS band: this is what the page draws it from, and
+// its key is data on it, so nothing but that key decides where its collapse is held.
+const PARKED_BAND_CARD = { title: PARKED_BAND, kind: "category", key: `${ROADMAP}:parked` };
+
+// A part drawn as a separator band rather than as a card: a roadmap category, a design category or
+// delta.
+const isBand = (card) => card.kind === "category" || card.kind === "delta";
+
+// The key a band's collapse is held under: the card's own where it carries one, else its column, the
+// file holding it where its card names one, its title and its occurrence in that column — the file
+// telling apart two same-titled bands of a diced design, which occurrence does not.
+function bandKey(column, card) {
+  const file = card.path ? `${card.path}:` : "";
+  return card.key ?? `${column}:${file}${card.title}:${card.occurrence}`;
+}
 
 function el(tag, className, text) {
   const e = document.createElement(tag);
@@ -116,6 +134,7 @@ function render(payload) {
     $("connection").title = `docdicer v${payload.docdicer_version}`;
     renderColumns(payload);
     drawn = payload.version;
+    lastPayload = payload;
     if ($("alert").textContent.startsWith(NOT_DRAWN)) showAlert("");
   } catch (error) {
     showAlert(NOT_DRAWN + String(error.message || error));
@@ -123,7 +142,8 @@ function render(payload) {
   }
 }
 
-function renderColumns({ board, plan_columns }) {
+function renderColumns(payload) {
+  const { board, plan_columns } = payload;
   const scrolled = new Map();
   for (const section of boardEl.querySelectorAll(".column")) {
     scrolled.set(section.dataset.column, section.querySelector(".cards").scrollTop);
@@ -141,14 +161,38 @@ function renderColumns({ board, plan_columns }) {
     return section;
   });
 
+  // The keys of the bands the payload draws; a collapse whose band is gone is dropped before the
+  // columns are drawn.
+  const bands = new Set([
+    ...board.roadmap.filter(isBand).map((card) => bandKey(ROADMAP, card)),
+    ...board.design.filter(isBand).map((card) => bandKey(DESIGN, card)),
+    ...(board.parked.length ? [bandKey(ROADMAP, PARKED_BAND_CARD)] : []),
+  ]);
+  for (const key of collapsed) if (!bands.has(key)) collapsed.delete(key);
+  const roadmap = lists.get(ROADMAP);
   for (const notice of board.notices) lists.get(notice.column).append(noticeEl(notice));
-  for (const card of board.roadmap) lists.get(ROADMAP).append(roadmapCard(card));
-  if (board.parked.length) lists.get(ROADMAP).append(separatorEl({ title: PARKED_BAND }));
-  for (const card of board.parked) lists.get(ROADMAP).append(parkedCard(card, { kind: "parked", card }));
-  for (const card of board.design) lists.get(DESIGN).append(designCard(card));
+  for (const card of showing(board.roadmap, ROADMAP)) roadmap.append(roadmapCard(card, ROADMAP));
+  if (board.parked.length) {
+    for (const card of showing([PARKED_BAND_CARD, ...board.parked], ROADMAP)) {
+      const element = isBand(card) ? separatorEl(card, ROADMAP) : parkedCard(card, { kind: "parked", card });
+      roadmap.append(element);
+    }
+  }
+  for (const card of showing(board.design, DESIGN)) lists.get(DESIGN).append(designCard(card, DESIGN));
   for (const pkg of board.packages) lists.get(pkg.state).append(packageCard(pkg));
   boardEl.replaceChildren(...sections);
   for (const [key, list] of lists) list.scrollTop = scrolled.get(key) ?? 0;
+}
+
+// The cards of a column left showing by its bands, in order: a band opens for the cards below it,
+// and those cards show only while it is not collapsed.
+function showing(cards, column) {
+  let band = null;
+  return cards.filter((card) => {
+    if (!isBand(card)) return !collapsed.has(band);
+    band = bandKey(column, card);
+    return true;
+  });
 }
 
 function draggable(element, info) {
@@ -157,8 +201,25 @@ function draggable(element, info) {
   return element;
 }
 
-// A category or a delta: a separator band, a heading below the column's, not a card.
-const separatorEl = (card) => inlineEl("separator", card.title, "h3");
+// A category or a delta: a separator band, a heading below the column's, not a card. The heading
+// stays in the outline and holds a native button for the cards below it: a double click, Enter or
+// Space collapses them and shows them again, and the marker after its text shows which state it is
+// in, a form and not a colour.
+function separatorEl(card, column) {
+  const key = bandKey(column, card);
+  const isCollapsed = collapsed.has(key);
+  const button = el("button");
+  button.type = "button";
+  button.dataset.band = key;
+  button.setAttribute("aria-expanded", String(!isCollapsed));
+  appendInline(button, card.title);
+  const marker = el("span", "", isCollapsed ? "▸" : "▾");
+  marker.setAttribute("aria-hidden", "true");
+  button.append(" ", marker);
+  const band = el("h3", "separator");
+  band.append(button);
+  return band;
+}
 
 // Content outside the layout, shown at the head of the column it names: where it is, the text
 // found as written (an empty one as `found an empty line`, as check-roadmap and check-design say it)
@@ -172,9 +233,9 @@ function noticeEl(notice) {
 }
 
 // A roadmap part: a category's separator, or a ticket's card titled over its text, which drags.
-function roadmapCard(card) {
-  if (card.kind !== "ticket") {
-    const separator = separatorEl(card);
+function roadmapCard(card, column) {
+  if (isBand(card)) {
+    const separator = separatorEl(card, column);
     separatorCard.set(separator, card);
     return separator;
   }
@@ -221,8 +282,8 @@ function textEl(text) {
 // A design part. A category or a delta is a separator; a delta's entry is a flat card that does not
 // drag. A ticket's card: a link ticket looks like its parked work's parked card, any other is
 // titled over the ticket's text; either drags as the design card served.
-function designCard(card) {
-  if (card.kind === "category" || card.kind === "delta") return separatorEl(card);
+function designCard(card, column) {
+  if (isBand(card)) return separatorEl(card, column);
   const info = { kind: "design", card };
   if (card.parked !== null) {
     return parkedCard({ title: card.title, paths: card.parked, hrefs: card.parked_hrefs, href: card.href }, info);
@@ -370,6 +431,43 @@ for (const type of ["dragover", "drop"]) {
     event.dataTransfer.dropEffect = "none";
   });
 }
+
+// ---- collapsed bands ---------------------------------------------------------------------------
+
+// A band's collapse, by a double click on its button or by Enter or Space while the button has focus:
+// the key is added or dropped and the columns are redrawn from the payload last drawn, which draws
+// no card under a collapsed band, so a card a poll adds under one stays hidden too. The two refusals
+// are `render`'s: there is no payload to redraw from, and a redraw mid-drag would cancel the drag.
+function toggleBand(band) {
+  if (!lastPayload || dragging) return;
+  const key = band.dataset.band;
+  if (collapsed.has(key)) collapsed.delete(key);
+  else collapsed.add(key);
+  renderColumns(lastPayload);
+  // The redraw replaced the band: the band drawn under that key takes focus, so Enter and Space
+  // toggle it again without re-tabbing.
+  const redrawn = [...boardEl.querySelectorAll("[data-band]")].find((e) => e.dataset.band === key);
+  redrawn?.focus();
+}
+
+// The band's button under the pointer or the event's target, if any.
+function bandOf(event) {
+  const node = targetElement(event);
+  return node && node.closest("[data-band]");
+}
+
+boardEl.addEventListener("dblclick", (event) => {
+  const band = bandOf(event);
+  if (band) toggleBand(band);
+});
+
+// Only a double click toggles, so the button's activation, a click, is no toggle: Enter and Space are
+// taken here, and their default on a button, a click, changes nothing.
+boardEl.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const band = bandOf(event);
+  if (band) toggleBand(band);
+});
 
 // ---- live following ----------------------------------------------------------------------------
 
