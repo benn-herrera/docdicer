@@ -4,8 +4,8 @@ polling the files it reads, with the moves between Roadmap and Design. It keeps 
 Endpoints, each answering JSON but the page's files and the served documents:
 
 - `GET /` and `GET /<file>`: the page's files, from the package's `assets/` directory.
-- `GET /<path>.md`: a file the board reads, `board.served_files`, as `text/markdown`, read-only; any
-  other path is 404.
+- `GET /<path>.md`: a file `board.served_files` names — its docstring gives the set — as
+  `text/markdown`, read-only; any other path is 404.
 - `GET /api/board?since=<version>`: the board payload; where `since` is the version the server
   holds, the answer waits until the board changes or `LONG_POLL_SECONDS` pass.
 - `POST /api/stop` `{}`: answers `{}`, then stops the server, so `run_kanban` returns 0.
@@ -213,10 +213,9 @@ def _asset(name: str) -> Optional[tuple[bytes, str]]:
 
 
 def _document(root: str, url_path: str) -> Optional[tuple[bytes, str]]:
-    """The file the board reads that url_path, percent-decoded (a byte that is not UTF-8 decoded as
-    a name holds it), names, and its content type; None where it names none or that file cannot be
-    read. The path is only matched against the files the board reads, never joined onto root as
-    given."""
+    """The served file url_path, percent-decoded (a byte that is not UTF-8 decoded as a name holds
+    it), names, and its content type; None where it names none or that file cannot be read. The path
+    is only matched against the files `served_files` names, never joined onto root as given."""
     try:
         wanted = unquote(url_path[1:], errors="surrogateescape")
         name = next((p for p in served_files(root) if p == wanted), None)

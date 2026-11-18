@@ -54,8 +54,11 @@ are entry cards, which cannot be dragged.
 Each card's title links to the file and heading it shows, opening in a new tab; a parked card links
 each of its files, and a link ticket's card its heading and each of those files. A package card
 links the heading its title is read from, an untitled one its status row's file. The server serves
-exactly the files the board reads, read-only; each response is `no-store` and `nosniff`, and the
-pages and markdown also carry a Content-Security-Policy (ARCHITECTURE §5, **Headers.**).
+the project's documents — every `.md` file directly below the project root, every `.md` file beneath
+`PROJECT_DOCS/` ([a project's diced documents](development.md#worked-example); at the project root,
+where a project has one) and `ROADMAP_DESIGNS/`, and the active design's and plan's own files — and
+nothing else, read-only. Each response is `no-store` and `nosniff`, and the pages and markdown also
+carry a Content-Security-Policy (ARCHITECTURE §5, **Headers.**).
 
 ## Collapsing
 

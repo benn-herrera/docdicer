@@ -42,12 +42,13 @@ links it.
 ## `check-plan`
 
 Checks that a development plan is in the form a program can read: a status table under `## Status`
-whose `Package` and `State` columns hold unique IDs without spaces and states opening with
-`dispatchable`, `in progress` or `landed` (an empty cell is a drafted package), and a `Rating`
-column whose cells open `mechanical` or `expert`, and a `Release: <version>` line, where present,
-first after the H1 heading. A package's title is the text after its ID in its heading. A package
-whose title opens `Post-plan review` is allowed only with one whose title opens
-`Post-plan burndown`, and the reverse.
+whose `Package` and `State` columns hold unique IDs without spaces and states opening with `drafted`
+(not yet ready to hand to an agent as it stands), `dispatchable`, `in progress` or `landed`, and a
+`Rating` column whose cells open `mechanical` or `expert`, and a `Release: <version>` line, where
+present, first after the H1 heading. A State cell opening with none of those four words, an empty
+cell included, is a breach. A package's title is the text after its ID in its heading. A package
+whose title opens `Post-plan review` is allowed only with one whose title opens `Post-plan
+burndown`, and the reverse.
 
 ## `check-design`
 

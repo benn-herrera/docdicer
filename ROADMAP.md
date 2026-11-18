@@ -1,21 +1,13 @@
 # ROADMAP – docdicer
 
-Future intent only. Not part of the contract documents.
+Future intent only. Not part of the contract doc set; not handed to coding dispatches.
+A finished item leaves nothing. Do not mark it as done and let it persist. Just remove it.
+
+## Bugs
 
 ## Features
 
 ## Maintenance
-
-### Eliminate .webp binary blobs from history
-
-Eliminate the one revision of the binary blobs from history on main.
-```bash
-git lfs migrate import --everything --include=*.webp
-git reflog expire --expire=now --all
-git gc --prune=now --aggressive
-git push --force origin main
-git push --force --tags
-```
 
 ## Testing
 

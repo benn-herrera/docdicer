@@ -179,7 +179,8 @@ function renderColumns(payload) {
     }
   }
   for (const card of showing(board.design, DESIGN)) lists.get(DESIGN).append(designCard(card, DESIGN));
-  for (const pkg of board.packages) lists.get(pkg.state).append(packageCard(pkg));
+  // A work package whose State cell opens with no state word names no column: the board draws no card.
+  for (const pkg of board.packages) lists.get(pkg.state)?.append(packageCard(pkg));
   boardEl.replaceChildren(...sections);
   for (const [key, list] of lists) list.scrollTop = scrolled.get(key) ?? 0;
 }

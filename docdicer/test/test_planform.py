@@ -55,46 +55,49 @@ def _breaches(plan, root: Path) -> list[tuple[BreachKind, str, int, str]]:
             + _TABLE
             + "| P1 | |\n| P2 | |\n| P3 | |\n| P4 | |\n\n"
             + "## P1 — Alpha\n\n### P2: Beta\n\n#### P3. Gamma\n\n###### P4 Delta\n",
-            [("P1", "Alpha", "drafted", ""), ("P2", "Beta", "drafted", ""), ("P3", "Gamma", "drafted", "")]
-            + [("P4", "Delta", "drafted", "")],
+            [("P1", "Alpha", None, ""), ("P2", "Beta", None, ""), ("P3", "Gamma", None, "")]
+            + [("P4", "Delta", None, "")],
             id="heading-at-any-level-with-any-separator",
         ),
         pytest.param(
             "# Plan\n\n## Status\n\n" + _TABLE + "| P1 | |\n\n## P10 Ten\n\n## P1.2 Sub\n\n## P1 — One\n",
-            [("P1", "One", "drafted", "")],
+            [("P1", "One", None, "")],
             id="heading-matched-by-whole-id",
         ),
         pytest.param(
             "# Plan\n\n## Status\n\n" + _TABLE + "| P1 | |\n\n## P1 — The reader (`coder`, expert)\n",
-            [("P1", "The reader (`coder`, expert)", "drafted", "")],
+            [("P1", "The reader (`coder`, expert)", None, "")],
             id="only-the-title-taken-from-the-heading",
         ),
         pytest.param(
             "# Plan\n\n## Status\n\n" + _TABLE + "| P1 | |\n",
-            [("P1", "", "drafted", "")],
+            [("P1", "", None, "")],
             id="no-heading-no-title",
         ),
         pytest.param(
             "# Plan\n\n## Status\n\n" + _TABLE + "| P3 | |\n\n## Network usage (P3)\n",
-            [("P3", "", "drafted", "")],
+            [("P3", "", None, "")],
             id="heading-mentioning-id-gives-no-title",
         ),
         pytest.param(
             "# Plan\n\n## Status\n\n"
             + _TABLE
             + "| A | |\n| B | dispatchable |\n| C | in progress: a note |\n| D | landed (abc123) |\n"
-            + "| E | done |\n| F | not started |\n| G | Landed |\n| H | landedness |\n",
+            + "| E | done |\n| F | not started |\n| G | Landed |\n| H | landedness |\n"
+            + "| I | drafted |\n| J | drafted: a note |\n",
             [
-                ("A", "", "drafted", ""),
+                ("A", "", None, ""),
                 ("B", "", "dispatchable", ""),
                 ("C", "", "in progress", "a note"),
                 ("D", "", "landed", "(abc123)"),
-                ("E", "", "drafted", "done"),
-                ("F", "", "drafted", "not started"),
-                ("G", "", "drafted", "Landed"),
-                ("H", "", "drafted", "landedness"),
+                ("E", "", None, "done"),
+                ("F", "", None, "not started"),
+                ("G", "", None, "Landed"),
+                ("H", "", None, "landedness"),
+                ("I", "", "drafted", ""),
+                ("J", "", "drafted", "a note"),
             ],
-            id="state-word-and-note-other-words-drafted",
+            id="state-word-and-note-only-the-state-words-state",
         ),
         pytest.param(
             "# Plan\n\n## Before\n\n"
@@ -136,7 +139,7 @@ def _breaches(plan, root: Path) -> list[tuple[BreachKind, str, int, str]]:
         ),
         pytest.param(
             "# Plan\n\n## Status\n\n" + _TABLE + "| P1 | |\n\n~~~\n## P1 — Fenced\n~~~\n",
-            [("P1", "", "drafted", "")],
+            [("P1", "", None, "")],
             id="fenced-heading-ignored",
         ),
         pytest.param("# Plan\n\nNo status.\n", [], id="no-status-table"),
@@ -222,28 +225,30 @@ def test_title_and_release(tmp_path, text, title, release, hardening):
         pytest.param(
             "# Plan\n\nRelease: 1.0\n\n## Status\n\n"
             + _RATED
-            + "| P1 | landed: ok | expert |\n| P2 | | mechanical: a note |\n|  | stray | |\n\n"
+            + "| P1 | landed: ok | expert |\n| P2 | drafted | mechanical: a note |\n|  | stray | |\n\n"
             + "## P1 — One\n\n## P2 — Two (after P1)\n",
             [],
             id="conforming-plan",
         ),
         pytest.param(
-            "## Status\n\n" + _RATED + "| P1 | | expert |\n| P2 | | expert |\n| P1 | landed | expert |\n",
+            "## Status\n\n"
+            + _RATED
+            + "| P1 | drafted | expert |\n| P2 | drafted | expert |\n| P1 | landed | expert |\n",
             [(BreachKind.ID_REPEATED, 7, "P1 (first row: line 5)")],
             id="id-repeated",
         ),
         pytest.param(
-            "## Status\n\n" + _RATED + "| P1 Correction texts | | expert |\n",
+            "## Status\n\n" + _RATED + "| P1 Correction texts | drafted | expert |\n",
             [(BreachKind.ID_SPACE, 5, "P1 Correction texts")],
             id="id-holds-a-space",
         ),
         pytest.param(
-            "## Status\n\n" + _RATED + "| P3 | | expert |\n\n## Network usage (P3)\n",
+            "## Status\n\n" + _RATED + "| P3 | drafted | expert |\n\n## Network usage (P3)\n",
             [],
             id="heading-mentioning-id-is-no-breach",
         ),
         pytest.param(
-            "## Status\n\n" + _TABLE + "| P1 | |\n| P2 | |\n",
+            "## Status\n\n" + _TABLE + "| P1 | drafted |\n| P2 | drafted |\n",
             [(BreachKind.RATING_MISSING, 3, "| Package | State |")],
             id="no-rating-column-one-breach-at-the-header",
         ),
@@ -255,7 +260,7 @@ def test_title_and_release(tmp_path, text, title, release, hardening):
         pytest.param(
             "## Status\n\n"
             + _RATED
-            + "| A | | |\n| B | | Expert |\n| C | | **expert** |\n| D | | trivial: one line |\n",
+            + "| A | drafted | |\n| B | drafted | Expert |\n| C | drafted | **expert** |\n| D | drafted | trivial: one line |\n",
             [
                 (BreachKind.RATING_WORD, 5, ""),
                 (BreachKind.RATING_WORD, 6, "Expert"),
@@ -295,19 +300,21 @@ def test_title_and_release(tmp_path, text, title, release, hardening):
             id="fenced-content-not-checked",
         ),
         pytest.param(
-            "## Status\n\n" + _RATED + "| P1 | | expert |\n| P2 | | expert |\n\n## P1 — Post-plan review\n",
+            "## Status\n\n"
+            + _RATED
+            + "| P1 | drafted | expert |\n| P2 | drafted | expert |\n\n## P1 — Post-plan review\n",
             [(BreachKind.REVIEW_UNPAIRED, 5, "P1 Post-plan review")],
             id="review-without-burndown",
         ),
         pytest.param(
-            "## Status\n\n" + _RATED + "| P1 | | expert |\n\n## P1: Post-plan burndown of the review\n",
+            "## Status\n\n" + _RATED + "| P1 | drafted | expert |\n\n## P1: Post-plan burndown of the review\n",
             [(BreachKind.BURNDOWN_UNPAIRED, 5, "P1 Post-plan burndown of the review")],
             id="burndown-without-review",
         ),
         pytest.param(
             "## Status\n\n"
             + _RATED
-            + "| P1 | | expert |\n| P2 | | expert |\n\n## P1 — Post-plan review\n\n## P2 — Post-plan review again\n",
+            + "| P1 | drafted | expert |\n| P2 | drafted | expert |\n\n## P1 — Post-plan review\n\n## P2 — Post-plan review again\n",
             [
                 (BreachKind.REVIEW_UNPAIRED, 5, "P1 Post-plan review"),
                 (BreachKind.REVIEW_UNPAIRED, 6, "P2 Post-plan review again"),
@@ -317,12 +324,14 @@ def test_title_and_release(tmp_path, text, title, release, hardening):
         pytest.param(
             "## Status\n\n"
             + _RATED
-            + "| P1 | | expert |\n| P2 | | expert |\n\n## P2 — Post-plan burndown\n\n## P1 — Post-plan review\n",
+            + "| P1 | drafted | expert |\n| P2 | drafted | expert |\n\n## P2 — Post-plan burndown\n\n## P1 — Post-plan review\n",
             [],
             id="review-and-burndown-paired",
         ),
         pytest.param(
-            "## Status\n\n" + _RATED + "| P1 | | expert |\n| P2 | done | expert |\n\n## P1 — Post-plan review\n",
+            "## Status\n\n"
+            + _RATED
+            + "| P1 | drafted | expert |\n| P2 | done | expert |\n\n## P1 — Post-plan review\n",
             [(BreachKind.REVIEW_UNPAIRED, 5, "P1 Post-plan review"), (BreachKind.STATE_WORD, 6, "done")],
             id="pairing-breach-in-reading-order",
         ),
@@ -331,6 +340,12 @@ def test_title_and_release(tmp_path, text, title, release, hardening):
 def test_breaches(tmp_path, text, breaches):
     plan = _read(tmp_path, text)
     assert _breaches(plan, tmp_path) == [(kind, "plan.md", line, found) for kind, line, found in breaches]
+
+
+def test_state_word_breach_reports_an_empty_cell(tmp_path):
+    plan = _read(tmp_path, "## Status\n\n" + _RATED + "| P1 | | expert |\n")
+    (breach,) = plan.breaches
+    assert (breach.kind, breach.found) == (BreachKind.STATE_WORD, "")
 
 
 @pytest.mark.parametrize(
@@ -345,7 +360,7 @@ def test_breaches(tmp_path, text, breaches):
     ],
 )
 def test_post_plan_title_rule(tmp_path, heading, kinds):
-    plan = _read(tmp_path, "## Status\n\n" + _RATED + "| P1 | | expert |\n\n" + heading)
+    plan = _read(tmp_path, "## Status\n\n" + _RATED + "| P1 | drafted | expert |\n\n" + heading)
     assert [b.kind for b in plan.breaches] == kinds
 
 
@@ -363,7 +378,7 @@ def test_diced_plan(tmp_path):
     assert (plan.title, plan.release) == ("Plan", "0.1")
     assert [(p.id, p.title, p.state, Path(p.path).name, p.line) for p in plan.packages] == [
         ("P1", "One", "landed", "status.md", 5),
-        ("P2", "Two", "drafted", "status.md", 6),
+        ("P2", "Two", None, "status.md", 6),
     ]
     # reading order: the entry point, then every other `.md` of the tree, a directory's files before its subdirectories
     assert _breaches(plan, tmp_path) == [

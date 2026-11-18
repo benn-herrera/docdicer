@@ -151,9 +151,12 @@ _SERVED = {
     "ROADMAP.md": "## Next\n\n### Café\n",
     "ACTIVE_DESIGN/entry-point.md": "# Design\n",
     "ACTIVE_DESIGN/a b%.md": "## Goals\n",
+    "ACTIVE_PLAN_REVIEW.md": "# Review\n",
+    "PROJECT_DOCS/SPEC/arch.md": "# A leaf\n",
     "ROADMAP_DESIGNS/tree/entry-point.md": "# Tree\n",
     "ROADMAP_DESIGNS/tree/leaf.md": "## Leaf\n",
-    "SPEC.md": "# Spec\n",
+    "notes.txt": "not markdown\n",
+    "docs/notes.md": "# In a directory no pattern names\n",
 }
 
 
@@ -161,12 +164,15 @@ _SERVED = {
     "path, name",
     [
         pytest.param("ROADMAP.md", "ROADMAP.md", id="roadmap"),
+        pytest.param("ACTIVE_PLAN_REVIEW.md", "ACTIVE_PLAN_REVIEW.md", id="root-document-the-board-does-not-read"),
+        pytest.param("PROJECT_DOCS/SPEC/arch.md", "PROJECT_DOCS/SPEC/arch.md", id="project-docs-leaf"),
         pytest.param("ACTIVE_DESIGN/a%20b%25.md", "ACTIVE_DESIGN/a b%.md", id="percent-decoded-leaf"),
         pytest.param("ROADMAP_DESIGNS/tree/entry-point.md", "ROADMAP_DESIGNS/tree/entry-point.md", id="parked-tree"),
+        pytest.param("ROADMAP_DESIGNS/tree/leaf.md", "ROADMAP_DESIGNS/tree/leaf.md", id="parked-tree-leaf"),
         pytest.param("ROADMAP_DESIGNS/a%FF.md", "ROADMAP_DESIGNS/a\udcff.md", id="parked-file-named-not-utf-8"),
     ],
 )
-def test_a_file_the_board_reads_is_served(tmp_path, serve, path, name):
+def test_a_served_file_is_served(tmp_path, serve, path, name):
     files_ = dict(_SERVED)
     if name not in files_:
         files_[name] = "# A\n"
@@ -182,8 +188,8 @@ def test_a_file_the_board_reads_is_served(tmp_path, serve, path, name):
 @pytest.mark.parametrize(
     "path",
     [
-        pytest.param("SPEC.md", id="not-read-by-the-board"),
-        pytest.param("ROADMAP_DESIGNS/tree/leaf.md", id="parked-tree-leaf"),
+        pytest.param("notes.txt", id="not-markdown"),
+        pytest.param("docs/notes.md", id="markdown-in-a-directory-no-pattern-names"),
         pytest.param("../proj/ROADMAP.md", id="escaping-the-root"),
         pytest.param("%2e%2e/proj/ROADMAP.md", id="escaping-the-root-percent-encoded"),
     ],
@@ -229,7 +235,7 @@ def test_board_payload_is_the_model(tmp_path, serve):
     payload = serve(root).board()
 
     assert payload["board"] == _json_round_trip(asdict(read_board(root)))
-    assert payload["plan_columns"] == [planform.DRAFTED, *planform.STATE_WORDS]
+    assert payload["plan_columns"] == ["drafted", "dispatchable", "in progress", "landed"]
     assert payload["project"] == "proj"
     assert payload["docdicer_version"] == docdicer.__version__
 

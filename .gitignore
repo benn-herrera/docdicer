@@ -8,10 +8,9 @@ build/
 
 .claude/
 .claude
-.claude-temp/
 .opencode/
 .opencode
-.opencode-temp/
+.devpro-temp/
 backup.*
 
 docdicer/test/temp/

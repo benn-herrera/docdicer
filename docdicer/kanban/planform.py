@@ -25,11 +25,12 @@ from ..dicerlib.textfile import fence_flags, is_blank, read_text, split_lines
 ACTIVE_DESIGN = "ACTIVE_DESIGN.md"
 ACTIVE_PLAN = "ACTIVE_PLAN.md"
 PARKED_DESIGNS = "ROADMAP_DESIGNS"
+PROJECT_DOCS = "PROJECT_DOCS"
+SERVED_TREES = (PROJECT_DOCS, PARKED_DESIGNS)  # each of their `.md` files served, walked recursively
 _TOPIC_SUFFIXES = ("_DESIGN", "_PLAN", "_PLAN_REVIEW")  # a parked name `<topic><suffix>` makes a topic
 ROADMAP = "ROADMAP.md"
 
-DRAFTED = "drafted"
-STATE_WORDS = ("dispatchable", "in progress", "landed")
+STATE_WORDS = ("drafted", "dispatchable", "in progress", "landed")
 RATING_WORDS = ("mechanical", "expert")
 HARDENING = "Release hardening"
 _RELEASE = "Release:"
@@ -99,7 +100,7 @@ class Breach:
 class WorkPackage:
     id: str
     title: str  # from the heading opening with the ID; "" where none does
-    state: str  # DRAFTED or one of STATE_WORDS
+    state: Optional[str]  # one of STATE_WORDS; None where the State cell opens with no word, a breach
     note: str  # the State cell after its state word; the whole cell where it has none
     lifetime: Optional[str]  # None where the status table has no Lifetime column
     rating: Optional[str]  # one of RATING_WORDS; None where unrated
@@ -446,12 +447,12 @@ def _packages(table: _StatusTable, headings: list[Heading], breaches: list[Breac
             )
             breaches.append(Breach(BreachKind.ID_SPACE, table_path, no, package_id, accepted))
         word, note = _opening_word(_STATE, cell)
-        if cell and word is None:
+        if word is None:
             accepted = (
-                "a State cell opening with the word its text means: `dispatchable` (ready to hand to an agent),"
-                " `in progress` (dispatched, not yet landed) or `landed` (accepted and committed), lowercase and"
-                " without markup, any other text kept after the word as a note; empty only for a package not yet"
-                " ready to dispatch (drafted)"
+                "a State cell opening with the word its text means: `drafted` (not yet ready to hand to an"
+                " agent as it stands), `dispatchable` (ready to hand to an agent), `in progress` (dispatched,"
+                " not yet landed) or `landed` (accepted and committed), lowercase and without markup, any other"
+                " text kept after the word as a note"
             )
             breaches.append(Breach(BreachKind.STATE_WORD, table_path, no, cell, accepted))
         lifetime = cells[lifetime_col] if lifetime_col is not None else None
@@ -463,9 +464,7 @@ def _packages(table: _StatusTable, headings: list[Heading], breaches: list[Breac
                 breaches.append(Breach(BreachKind.RATING_WORD, table_path, no, cells[rating_col], accepted))
         title, heading = _title(package_id, headings)
         packages.append(
-            WorkPackage(
-                package_id, title, word or DRAFTED, note, lifetime, rating, rating_note, table_path, no, heading
-            )
+            WorkPackage(package_id, title, word, note, lifetime, rating, rating_note, table_path, no, heading)
         )
     return packages
 

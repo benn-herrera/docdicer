@@ -84,7 +84,6 @@ _venv:
 
 agents:
   @command -v devpro > /dev/null || { echo 'devpro not installed. run `brew install benn-herrera/tap/devpro`' }
-  devpro install . --harnes=claude
-  devpro install . --harness=opencode
+  devpro install .
 
 import? '.opencode/plugins/devpro/skills/docdicer/tools/runner-snippets/docdicer.just'

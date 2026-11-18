@@ -9,8 +9,8 @@ Release: 1.0
 | P1 | landed | expert |
 | P2 | in progress: a note | mechanical |
 | P3 | dispatchable | expert: a note |
-| P4 | | expert |
-| P5 | | expert |
+| P4 | drafted | expert |
+| P5 | drafted | expert |
 
 ## P1 — One
 

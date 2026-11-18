@@ -80,11 +80,11 @@ def test_no_project_root_is_refused(tmp_path, monkeypatch):
     "text, kind",
     [
         pytest.param(
-            "## Status\n\n" + _TABLE + "| P1 | | expert |\n| P1 | | expert |\n",
+            "## Status\n\n" + _TABLE + "| P1 | drafted | expert |\n| P1 | drafted | expert |\n",
             BreachKind.ID_REPEATED,
             id="id-repeated",
         ),
-        pytest.param("## Status\n\n" + _TABLE + "| P 1 | | expert |\n", BreachKind.ID_SPACE, id="id-space"),
+        pytest.param("## Status\n\n" + _TABLE + "| P 1 | drafted | expert |\n", BreachKind.ID_SPACE, id="id-space"),
         pytest.param("## Status\n\n" + _TABLE + "| P1 | Landed | expert |\n", BreachKind.STATE_WORD, id="state-word"),
         pytest.param("# Plan\n\nIntro.\n\nRelease: 1\n", BreachKind.RELEASE_MISPLACED, id="release-misplaced"),
         pytest.param("# Plan\n\nRelease:\n", BreachKind.RELEASE_EMPTY, id="release-empty"),
@@ -93,14 +93,14 @@ def test_no_project_root_is_refused(tmp_path, monkeypatch):
             BreachKind.RATING_MISSING,
             id="rating-missing",
         ),
-        pytest.param("## Status\n\n" + _TABLE + "| P1 | | high |\n", BreachKind.RATING_WORD, id="rating-word"),
+        pytest.param("## Status\n\n" + _TABLE + "| P1 | drafted | high |\n", BreachKind.RATING_WORD, id="rating-word"),
         pytest.param(
-            "## Status\n\n" + _TABLE + "| P1 | | expert |\n\n## P1 — Post-plan review\n",
+            "## Status\n\n" + _TABLE + "| P1 | drafted | expert |\n\n## P1 — Post-plan review\n",
             BreachKind.REVIEW_UNPAIRED,
             id="review-unpaired",
         ),
         pytest.param(
-            "## Status\n\n" + _TABLE + "| P1 | | expert |\n\n## P1 — Post-plan burndown\n",
+            "## Status\n\n" + _TABLE + "| P1 | drafted | expert |\n\n## P1 — Post-plan burndown\n",
             BreachKind.BURNDOWN_UNPAIRED,
             id="burndown-unpaired",
         ),
@@ -126,7 +126,7 @@ def test_breach_message_carries_file_line_found_and_accepted(tmp_path, text, kin
     "row, found",
     [
         pytest.param("| P1 | a`b | expert |", "found `` a`b ``", id="backtick-in-the-text"),
-        pytest.param("| P1 | | |", "found an empty cell", id="empty-cell"),
+        pytest.param("| P1 | drafted | |", "found an empty cell", id="empty-cell"),
     ],
 )
 def test_found_text_is_quoted_whole(tmp_path, row, found):

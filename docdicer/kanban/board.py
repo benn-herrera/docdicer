@@ -30,10 +30,10 @@ from .planform import (
     ACTIVE_PLAN,
     CATEGORY,
     DELTA,
-    DRAFTED,
     HEADING,
     LAYOUT_BREACHES,
     ROADMAP,
+    SERVED_TREES,
     STATE_WORDS,
     TICKET,
     Breach,
@@ -52,7 +52,7 @@ from .planform import (
 )
 
 # The plan columns, left to right; a work package's card is in the column its state names.
-PLAN_COLUMNS = (DRAFTED, *STATE_WORDS)
+PLAN_COLUMNS = STATE_WORDS
 INSTRUCTION = "complete and update this design"
 CREATED_DESIGN_HEADING = "# ACTIVE DESIGN"
 CREATED_ROADMAP_HEADING = "# ROADMAP"
@@ -190,15 +190,22 @@ def watched_files(root: str) -> list[str]:
 
 
 def served_files(root: str) -> list[str]:
-    """The files the board reads, sorted, each relative to root and `/`-separated: `ROADMAP.md`,
-    the active design's and the active plan's files in the form read, and the parked work's files.
-    Reads none of them."""
-    paths = [p for p in [roadmap_file(root)] if p is not None]
+    """Every `.md` file at the project root's top level and beneath its `PROJECT_DOCS/` and
+    `ROADMAP_DESIGNS/` directories, and the active design's and the active plan's files in the form
+    read, sorted, each relative to root and `/`-separated. Reads none of them."""
+    paths = [
+        os.path.join(root, name)
+        for name in os.listdir(root)
+        if name.endswith(".md") and os.path.isfile(os.path.join(root, name))
+    ]
+    for tree in SERVED_TREES:
+        directory = os.path.join(root, tree)
+        if os.path.isdir(directory):
+            paths += markdown_files([directory])
     for monolith in (ACTIVE_DESIGN, ACTIVE_PLAN):
         document = active_document(root, monolith)
         if document:
             paths += document_paths(document)
-    paths += [f for work in parked_work(root) for f in work.files]
     return sorted({root_relative(root, p) for p in paths})
 
 

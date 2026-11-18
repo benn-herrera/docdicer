@@ -13,7 +13,6 @@ from docdicer.dicerlib.textfile import split_lines
 from docdicer.kanban import board as board_module
 from docdicer.kanban.board import (
     INSTRUCTION,
-    PLAN_COLUMNS,
     DesignCard,
     MoveRefused,
     MoveWriteFailed,
@@ -23,11 +22,10 @@ from docdicer.kanban.board import (
     move_to_roadmap,
     read_board,
 )
-from docdicer.kanban.planform import DRAFTED
 
 _PLAN = (
     "# Plan\n\nRelease: 9.9.9\n\n## Status\n\n| Package | Lifetime | Rating | State |\n|---|---|---|---|\n"
-    "| P1 | shipped | expert | |\n| P2 | scratch | mechanical | dispatchable |\n"
+    "| P1 | shipped | expert | drafted |\n| P2 | scratch | mechanical | dispatchable |\n"
     "| P3 | shipped | expert | in progress: a note |\n| P4 | shipped | expert | landed |\n"
     "| P5 | shipped | expert | done |\n|  | shipped | expert | landed |\n"
 )
@@ -86,9 +84,9 @@ def _to_roadmap(root: str, title: str, target: Optional[str] = None) -> list[str
     [
         pytest.param(
             _PLAN,
-            [("P1", DRAFTED, "shipped", "expert"), ("P2", "dispatchable", "scratch", "mechanical")]
+            [("P1", "drafted", "shipped", "expert"), ("P2", "dispatchable", "scratch", "mechanical")]
             + [("P3", "in progress", "shipped", "expert"), ("P4", "landed", "shipped", "expert")]
-            + [("P5", DRAFTED, "shipped", "expert")],
+            + [("P5", None, "shipped", "expert")],
             id="each-state-in-its-column-with-lifetime-and-rating",
         ),
         pytest.param(
@@ -101,7 +99,6 @@ def _to_roadmap(root: str, title: str, target: Optional[str] = None) -> list[str
 def test_plan_columns(tmp_path, plan, packages):
     board = read_board(_project(tmp_path, {"ACTIVE_PLAN.md": plan}))
     assert [(p.id, p.state, p.lifetime, p.rating) for p in board.packages] == packages
-    assert all(p.state in PLAN_COLUMNS for p in board.packages)
 
 
 @pytest.mark.parametrize(
@@ -395,10 +392,15 @@ def test_served_files(tmp_path):
             "ROADMAP.md": "## Next\n",
             "README.md": "# Readme\n",
             "SPEC.md": "# Spec\n",
+            "ACTIVE_PLAN_REVIEW.md": "# Review\n",
+            "notes.txt": "# Not markdown\n",
+            "docs/notes.md": "# In a directory no pattern names\n",
             "ACTIVE_DESIGN.md": "# Design\n",
             "ACTIVE_DESIGN/entry-point.md": "# Not read: the monolith is\n",
             "ACTIVE_PLAN/entry-point.md": "# Plan\n",
             "ACTIVE_PLAN/p1.md": "## P1\n",
+            "PROJECT_DOCS/README.md": "# Docs\n",
+            "PROJECT_DOCS/SPEC/arch.md": "# A leaf\n",
             "ROADMAP_DESIGNS/README.md": "# Parked\n",
             "ROADMAP_DESIGNS/X_DESIGN.md": "# X\n",
             "ROADMAP_DESIGNS/tree/entry-point.md": "# Tree\n",
@@ -409,10 +411,27 @@ def test_served_files(tmp_path):
         "ACTIVE_DESIGN.md",
         "ACTIVE_PLAN/entry-point.md",
         "ACTIVE_PLAN/p1.md",
+        "ACTIVE_PLAN_REVIEW.md",
+        "PROJECT_DOCS/README.md",
+        "PROJECT_DOCS/SPEC/arch.md",
+        "README.md",
         "ROADMAP.md",
+        "ROADMAP_DESIGNS/README.md",
         "ROADMAP_DESIGNS/X_DESIGN.md",
         "ROADMAP_DESIGNS/tree/entry-point.md",
+        "ROADMAP_DESIGNS/tree/leaf.md",
+        "SPEC.md",
     ]
+
+
+def test_served_files_names_nothing_for_an_absent_project_docs(tmp_path):
+    root = _project(tmp_path, {"README.md": "# Readme\n", "ROADMAP.md": "## Next\n"})
+    assert board_module.served_files(root) == ["README.md", "ROADMAP.md"]
+
+
+def test_served_files_excludes_a_root_entry_that_is_not_a_file(tmp_path):
+    root = _project(tmp_path, {"README.md": "# Readme\n", "notes.md/leaf.md": "# A leaf\n"})
+    assert board_module.served_files(root) == ["README.md"]
 
 
 def test_served_files_lists_an_unreadable_design_leaf(tmp_path):
