@@ -7,6 +7,10 @@ Manifest rows are tab separated (blank lines and lines starting with # skipped):
           followed by a list of the volumes directly under <outdir>; the file itself is not diced)
   label   for a volume nested as <parent volume>/<group>/<name>: the group's title, used for
           <parent>/<group>/index.md and the line added to <parent>/entry-point.md
+
+The first files written here — the group indexes and the entry point — are generator output, not
+documents a person edits: a run interrupted mid-write leaves a tree `dice-docs` rebuilds, so they are
+written in place rather than whole-or-not-at-all.
 """
 
 import io
@@ -17,7 +21,7 @@ from dataclasses import dataclass
 from typing import Optional, TextIO
 
 from .dicedoc import dice_doc, verify
-from .heads import CONTENTS, ENTRY_POINT, INDEX, contents_line
+from .heads import CONTENTS, ENTRY_POINT, INDEX, contents_line, directory_head
 from .linkscan import link_targets, plain_text
 from .outline import plan_sections
 from .textfile import append_text, fence_flags, read_lines, read_text, terminated_lines, write_lines, write_text
@@ -112,12 +116,12 @@ def _write_group_indexes(volumes: list[_Volume]) -> list[str]:
         if not _nested(v.out, volumes):
             continue
         group = _dirname(v.out)
-        index = f"{group}/{INDEX}"
+        index = directory_head(group, tree_root=False)
         if index not in written:
             write_text(index, f"# {v.label}\n\n{CONTENTS}\n\n")
             written.append(index)
             group_line = contents_line("", text=v.label, path=f"{_basename(group)}/{INDEX}")
-            append_text(f"{_dirname(group)}/{ENTRY_POINT}", group_line + "\n")
+            append_text(directory_head(_dirname(group), tree_root=True), group_line + "\n")
         volume_line = contents_line("", text=_title(v.monolith), path=f"{_basename(v.out)}/{ENTRY_POINT}")
         append_text(index, volume_line + "\n")
     return written
@@ -148,11 +152,11 @@ def _check_written(files: list[str], *, out: TextIO) -> bool:
     return ok
 
 
-def dice_docs(manifest: str, src: str, work: str, *, stdout: TextIO, stderr: TextIO) -> int:
+def dice_docs(manifest: str, src: str, work: str, *, root: str, stdout: TextIO, stderr: TextIO) -> int:
     """Build the link map, dice each volume, write group indexes and the entry point, then verify
-    every tree. Output directories not nested in another output are removed first; parents must
-    precede children in the manifest. A row flagged with anything but `entry` ends the command,
-    exit 2, before anything is written."""
+    every tree; root is the run directory the link map's paths are relative to. Output directories
+    not nested in another output are removed first; parents must precede children in the manifest.
+    A row flagged with anything but `entry` ends the command, exit 2, before anything is written."""
     if not os.path.isfile(manifest):
         print(f"not a file: {manifest}", file=stderr)
         return 2
@@ -191,14 +195,14 @@ def dice_docs(manifest: str, src: str, work: str, *, stdout: TextIO, stderr: Tex
         print(f"=== {v.file}", file=stdout)
         # A tree linking into trees not built yet reports those links dead; verify decides below.
         log = io.StringIO()
-        dice_doc(v.monolith, v.out, map_path, stdout=log, stderr=log)
+        dice_doc(v.monolith, v.out, map_path, root=root, stdout=log, stderr=log)
         stdout.write("".join(line for line in terminated_lines(log.getvalue()) if not line.startswith("dead link")))
 
     written = _write_group_indexes(volumes)
     if entry:
         written.append(_write_entry_point(entry, volumes))
 
-    rc = verify(map_path, [(v.monolith, v.out) for v in volumes], stdout=stdout, stderr=stderr)
+    rc = verify(map_path, [(v.monolith, v.out) for v in volumes], root=root, stdout=stdout, stderr=stderr)
     print("=== files written by this script: link targets exist", file=stdout)
     if not _check_written(written, out=stdout):
         rc = 1

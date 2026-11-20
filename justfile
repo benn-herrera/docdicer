@@ -24,6 +24,34 @@ format: _venv
   @{{VENV_PYTHON}} -m isort --profile black --line-length 120 docdicer
   @{{VENV_PYTHON}} -m flake8 --ignore="{{FLAKE8_IGNORE}}" docdicer
 
+[doc("bumps docdicer __version__ string in __init__.py - M)ajor, m)inor, or p)atch")]
+bump-version dot:
+  #!/usr/bin/env bash
+  set -euo pipefail
+
+  ver_file="./docdicer/__init__.py"
+  ver=$(awk '/^__version__[ \t]*=/ { gsub(/\"/, ""); print $NF; }' "${ver_file}")
+  old_ver=${ver}
+  ver=(${ver//\./ })
+  M=${ver[0]}
+  m=${ver[1]}
+  p=${ver[2]}
+  case "{{dot}}" in
+    M*) M=$((M + 1)); m=0; p=0;;
+    m*) m=$((m + 1)); p=0;;
+    p*) p=$((p + 1));;
+    *) printf 'invalid arg "%s". valid args are M)ajor, m)inor, or p)atch.\n' "{{dot}}" >&2; exit 1;;
+  esac
+
+  function sedi() {
+    [[ "$(uname)" == Darwin ]] && { sed -i "" "${@}"; return $?; }
+    sed -i "${@}"
+  }
+
+  sedi "$(printf 's:^__version__.*:__version__ = "%s.%s.%s":g' "${M}" "${m}" "${p}")" "${ver_file}"
+  echo "version bumped: ${old_ver} -> ${M}.${m}.${p}"
+
+
 _tag-clean:
   @git diff --quiet HEAD || { echo "tag: tracked files have uncommitted changes — commit them, then tag" >&2; exit 1; }
 

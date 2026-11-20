@@ -161,7 +161,9 @@ class Linker:
         number, name = text[1:], ""
         i = number.find(" `")
         if i >= 0:
-            number, name = number[:i], number[i + 2 :].removesuffix("`")
+            number, name = number[:i], number[i + 2 :]
+            if name.endswith("`"):
+                name = name[:-1]
         if number not in self.outline.by_number:
             return False
         if name:

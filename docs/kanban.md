@@ -4,8 +4,10 @@
 run it: [Commands: `kanban`](commands.md#kanban). The documents it reads are checked by
 `check-roadmap`, `check-plan` and `check-design`; their forms are in [Checks](checks.md), and a
 document holding breaches is shown all the same, its breaches as [notices](#notices). The rules
-behind this page are [SPEC](../SPEC.md) §11 and [ARCHITECTURE](../ARCHITECTURE.md) §5. What the tool
-is, and how to install it: [README](../README.md).
+behind this page are [SPEC](../SPEC.md) §10, the **Start** paragraph of which also fixes the server's
+response headers; [ARCHITECTURE](../ARCHITECTURE.md) §5 states the Content-Security-Policy the
+pages carry, which SPEC does not contract. What the tool is, and how to install it:
+[README](../README.md).
 
 ## Running
 
@@ -23,7 +25,16 @@ does not exist, no project root, an unreadable file at start, or a port that can
 - **Roadmap**: `ROADMAP.md`'s tickets, and each piece of parked work in `ROADMAP_DESIGNS/` that no
   roadmap ticket links, unless its link ticket is in the active design.
 - **Design**: the active design's tickets.
-- **Drafted, Dispatchable, In progress, Landed**: from the active plan's status table.
+- **Drafted, Dispatchable, In progress, Landed**: from the active plan's status table: each work
+  package whose State cell opens with that column's word, in row order.
+
+### Work package cards
+
+A work package's card shows its ID, its title, its rating word (`mechanical` or `expert`) or that
+it is unrated, and its lifetime where the status table has a `Lifetime` column, matched without
+regard to case. A package whose ID opens no heading in the plan shows untitled, and its card links
+its status row's file. The plan is read in the form [`check-plan`](checks.md#check-plan) checks,
+where `Lifetime` is a free column like any other.
 
 ### Parked work
 
@@ -56,7 +67,8 @@ each of its files, and a link ticket's card its heading and each of those files.
 links the heading its title is read from, an untitled one its status row's file. The server serves
 the project's documents — every `.md` file directly below the project root, every `.md` file beneath
 `PROJECT_DOCS/` ([a project's diced documents](development.md#worked-example); at the project root,
-where a project has one) and `ROADMAP_DESIGNS/`, and the active design's and plan's own files — and
+where a project has one) and `ROADMAP_DESIGNS/`, and the active design's and plan's own files, a
+diced one's leaves included — and
 nothing else, read-only. Each response is `no-store` and `nosniff`, and the pages and markdown also
 carry a Content-Security-Policy (ARCHITECTURE §5, **Headers.**).
 
@@ -78,16 +90,23 @@ before its first ticket, are not shown and raise no notice.
 
 ## Moves
 
-The page's only writes are the moves made by dropping a card: a ticket's, its lines carried as
-written but for relative links, which are rebased to resolve from the file the ticket joins, between
-`ROADMAP.md` and the active design, a single file or a diced tree, after which it is in exactly one
-of the two; a parked card's link ticket added to the design; a link ticket removed.
+The page's only writes are the moves made by dropping a card: a ticket's, between `ROADMAP.md` and
+the active design, a single file or a diced tree, after which it is in exactly one of the two; a
+parked card's link ticket added to the design; a link ticket removed.
 
-A `#anchor` link stays as written, so it breaks if its heading is not carried or its anchor changes
-in the file joined; `check-links` reports it. The board does not reorder tickets, move one between
-categories of a document, or edit any ticket's or category's text. A move creates an absent
-`ACTIVE_DESIGN.md` or `ROADMAP.md`, and the page then shows a move message naming the files written;
-a card that lands under a collapsed band stays hidden (see [Collapsing](#collapsing)).
+A ticket moves as its lines, byte for byte but for their relative links: each is rebased from the
+directory of the file the ticket leaves to reach the same file from the directory of the file it
+joins, fragment kept, and a target left unchanged by [link rewriting](dicing.md#link-rewriting-and-the-map)
+stays unchanged. Between files in one directory, as `ROADMAP.md` and a single-file active design
+are, no link changes. A `#anchor` target stays as written in both directions: it names a heading of
+the file holding it, so it keeps reaching a heading the ticket carries. It breaks only where the
+heading's repeat count gives it another anchor in the file joined — `-1`, `-2`, … per file, see
+[Checks: `check-links`](checks.md#check-links) — or where it named a heading outside the ticket;
+`check-links` reports either break. A link ticket is written, not moved: its links are made for the
+file that holds it. The board does not reorder tickets, move one between categories of a document,
+or edit any ticket's or category's text. A move creates an absent `ACTIVE_DESIGN.md` or
+`ROADMAP.md`, and the page then shows a move message naming the files written; a card that lands
+under a collapsed band stays hidden (see [Collapsing](#collapsing)).
 
 - **Roadmap to Design.** A Roadmap card dropped on Design goes to the end of the design's
   `## Drafts` category (added where there is none). In a diced design, where `## Drafts` opens an
@@ -117,5 +136,5 @@ before the removal, so the ticket ends in both documents, never neither.
 ## Plan columns
 
 The plan columns are read-only, drawn as outlined boxes of flat cards against the filled, draggable
-Roadmap and Design cards. A work package's state changes by editing the plan, and the board shows
-the edit.
+Roadmap and Design cards, set apart by form and not by colour alone. A work package's state changes
+by editing the plan, and the board shows the edit.

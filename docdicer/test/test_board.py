@@ -408,30 +408,33 @@ def test_served_files(tmp_path):
         },
     )
     assert board_module.served_files(root) == [
-        "ACTIVE_DESIGN.md",
-        "ACTIVE_PLAN/entry-point.md",
-        "ACTIVE_PLAN/p1.md",
-        "ACTIVE_PLAN_REVIEW.md",
-        "PROJECT_DOCS/README.md",
-        "PROJECT_DOCS/SPEC/arch.md",
-        "README.md",
-        "ROADMAP.md",
-        "ROADMAP_DESIGNS/README.md",
-        "ROADMAP_DESIGNS/X_DESIGN.md",
-        "ROADMAP_DESIGNS/tree/entry-point.md",
-        "ROADMAP_DESIGNS/tree/leaf.md",
-        "SPEC.md",
+        str(tmp_path / name)
+        for name in [
+            "ACTIVE_DESIGN.md",
+            "ACTIVE_PLAN/entry-point.md",
+            "ACTIVE_PLAN/p1.md",
+            "ACTIVE_PLAN_REVIEW.md",
+            "PROJECT_DOCS/README.md",
+            "PROJECT_DOCS/SPEC/arch.md",
+            "README.md",
+            "ROADMAP.md",
+            "ROADMAP_DESIGNS/README.md",
+            "ROADMAP_DESIGNS/X_DESIGN.md",
+            "ROADMAP_DESIGNS/tree/entry-point.md",
+            "ROADMAP_DESIGNS/tree/leaf.md",
+            "SPEC.md",
+        ]
     ]
 
 
 def test_served_files_names_nothing_for_an_absent_project_docs(tmp_path):
     root = _project(tmp_path, {"README.md": "# Readme\n", "ROADMAP.md": "## Next\n"})
-    assert board_module.served_files(root) == ["README.md", "ROADMAP.md"]
+    assert board_module.served_files(root) == [str(tmp_path / "README.md"), str(tmp_path / "ROADMAP.md")]
 
 
 def test_served_files_excludes_a_root_entry_that_is_not_a_file(tmp_path):
     root = _project(tmp_path, {"README.md": "# Readme\n", "notes.md/leaf.md": "# A leaf\n"})
-    assert board_module.served_files(root) == ["README.md"]
+    assert board_module.served_files(root) == [str(tmp_path / "README.md")]
 
 
 def test_served_files_lists_an_unreadable_design_leaf(tmp_path):
@@ -445,9 +448,9 @@ def test_served_files_lists_an_unreadable_design_leaf(tmp_path):
         except PermissionError:
             pass
         assert board_module.served_files(root) == [
-            "ACTIVE_DESIGN/entry-point.md",
-            "ACTIVE_DESIGN/goals.md",
-            "ACTIVE_DESIGN/later.md",
+            str(tmp_path / "ACTIVE_DESIGN/entry-point.md"),
+            str(tmp_path / "ACTIVE_DESIGN/goals.md"),
+            str(tmp_path / "ACTIVE_DESIGN/later.md"),
         ]
     finally:
         leaf.chmod(0o644)
@@ -505,6 +508,27 @@ def test_roadmap_card_moves_to_design(tmp_path, design, expected):
     board = read_board(root)
     [card] = [c for c in board.design if c.title == "Search index"]
     assert (card.kind, card.path, card.parked) == ("ticket", "ACTIVE_DESIGN.md", None)
+
+
+def test_a_move_lands_in_the_design_monolith_where_both_forms_exist(tmp_path):
+    root = _project(
+        tmp_path,
+        {
+            "ROADMAP.md": _ROADMAP,
+            "ROADMAP_DESIGNS/x.md": "# X\n",
+            "ACTIVE_DESIGN.md": _MONOLITH["ACTIVE_DESIGN.md"],
+            "ACTIVE_DESIGN/entry-point.md": _DICED["ACTIVE_DESIGN/entry-point.md"],
+            "ACTIVE_DESIGN/goals.md": _DICED["ACTIVE_DESIGN/goals.md"],
+        },
+    )
+    before = _tree(tmp_path)
+
+    assert _to_design(root, "Search index") == ["ACTIVE_DESIGN.md", "ROADMAP.md"]
+
+    assert _read(tmp_path / "ACTIVE_DESIGN.md") == _MONOLITH["ACTIVE_DESIGN.md"] + "\n" + _BODY
+    after = _tree(tmp_path)
+    for name in _DICED:
+        assert after[name] == before[name]
 
 
 _TICKET = "### Search index\n\nBuild.\n"

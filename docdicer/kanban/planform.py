@@ -17,7 +17,7 @@ from typing import Optional
 from ..dicerlib.anchors import heading_anchor_list
 from ..dicerlib.heads import ENTRY_POINT, HEADS
 from ..dicerlib.linkcheck import markdown_files
-from ..dicerlib.linkrewrite import never_rebased
+from ..dicerlib.linkrewrite import URL_SCHEME, never_rebased
 from ..dicerlib.linkscan import link_targets, plain_text
 from ..dicerlib.reassemble import own_end
 from ..dicerlib.textfile import fence_flags, is_blank, read_text, split_lines
@@ -38,6 +38,8 @@ _REVIEW = "Post-plan review"
 _BURNDOWN = "Post-plan burndown"
 DELTA_HEADINGS = ("SPEC delta", "ARCHITECTURE delta", "Code delta")  # in the order a design holds them
 _DELTA_LIST = ", ".join(f"`## {d}`" for d in DELTA_HEADINGS)
+AS_IT_STANDS = "**As it stands:**"  # a pair's from label, alone on its line outside fenced code
+BECOMES = "**Becomes:**"  # a pair's becomes label, alone on its line outside fenced code
 # The kinds of a Part; plain strings, as the board's payload carries them.
 CATEGORY = "category"
 TICKET = "ticket"
@@ -77,6 +79,12 @@ class BreachKind(Enum):
     DELTA_ORDER = "delta-order"
     NO_DELTA = "no-delta"
     DELTA_CONTENT = "delta-content"
+    MULTI_LINK = "multi-link"
+    PAIR_INCOMPLETE = "pair-incomplete"
+    TARGET_UNREADABLE = "target-unreadable"
+    FROM_NOT_FOUND = "from-not-found"
+    PAIR_DRIFTED = "pair-drifted"
+    PAIR_CONFLICTING = "pair-conflicting"
     TICKET_OUTSIDE = "ticket-outside"
     OLD_FORM_ITEM = "old-form-item"
     TICKET_EMPTY = "ticket-empty"
@@ -94,6 +102,8 @@ class Breach:
     line: int  # 1-based, in path
     found: str  # the text as the plan or design holds it
     accepted: str  # the form the rule accepts there
+    # A stderr line printed after this breach's, where the rule that fires states one; None where it states none.
+    interference: Optional[str] = None
 
 
 @dataclass
@@ -120,6 +130,15 @@ class Plan:
 
 
 @dataclass
+class Pair:
+    path: str  # the file holding the pair's As it stands label
+    line: int  # 1-based, the As it stands label's line
+    target: str  # the target's path
+    source: str  # the from passage: the lines between its fences, joined by newline
+    becomes: str  # the becomes passage
+
+
+@dataclass
 class Part:
     kind: str  # CATEGORY (to its first ticket) or TICKET; a delta's category and tickets are DELTA and ENTRY
     heading: str  # the heading's text as written, links unreduced
@@ -136,6 +155,11 @@ class Part:
     # A ticket's: its text continues into a later file, a non-blank line there coming before any heading
     # of level 3 or less.
     runs_on: bool = False
+    # An entry's target file, resolved relative to its own file; None for a category, a ticket, or an
+    # entry whose heading gives no target.
+    target: Optional[str] = None
+    # An entry's pairs, in line order; empty for a category, a ticket or an entry with no target.
+    pairs: list[Pair] = field(default_factory=list)
 
 
 @dataclass
@@ -148,6 +172,7 @@ class Layout:
 class Design:
     parts: list[Part] = field(default_factory=list)  # in document order
     breaches: list[Breach] = field(default_factory=list)  # the layout's among them
+    files: list[str] = field(default_factory=list)  # in document order, as design_files gives them
 
 
 @dataclass
@@ -581,6 +606,78 @@ def _delta_breach(part: Part, line: str, deltas: dict[str, Part]) -> Optional[Br
     return Breach(BreachKind.DELTA_ORDER, part.path, part.first + 1, line, accepted)
 
 
+def _fenced_passage(lines: list[str], fenced: list[bool], opener: int) -> tuple[str, int]:
+    """The passage between the fences of the block opening at lines[opener], fenced the file's
+    per-line fence flags, and the index after its closer: the first line after the opener whose flag
+    is false follows the closer. A block whose fence never closes runs to the end of lines."""
+    after = next((i for i in range(opener + 1, len(lines)) if not fenced[i]), len(lines))
+    return "\n".join(lines[opener + 1 : after - 1]), after
+
+
+def _next_nonblank(lines: list[str], start: int, end: int) -> int:
+    """The index of the first non-blank line in lines[start:end]; end where there is none."""
+    i = start
+    while i < end and is_blank(lines[i]):
+        i += 1
+    return i
+
+
+def _entry_target(heading: str, path: str) -> Optional[str]:
+    """The file an entry heading's one link names, resolved relative to path's directory; None where
+    the heading carries no link or more than one, or its link is a URL, empty or fragment-only."""
+    targets = link_targets(heading)
+    if len(targets) != 1:
+        return None
+    target = targets[0]
+    if not target or target.startswith("#") or URL_SCHEME.match(target):
+        return None
+    return os.path.normpath(os.path.join(os.path.dirname(path), target.split("#", 1)[0]))
+
+
+def _entry_pairs(part: Part, lines: list[str], fenced: list[bool], target: str) -> tuple[list[Pair], list[Breach]]:
+    """The pairs in part's body and the breach of each pair label that opens no pair. part is an
+    entry whose target is target; its body is the lines after its heading to part.last."""
+    pairs: list[Pair] = []
+    breaches: list[Breach] = []
+    accepted = (
+        "a pair label followed by its fenced block: `**As it stands:**` and its block, then `**Becomes:**`"
+        " and its block"
+    )
+    end = part.last + 1
+    i = part.first + 1
+    while i < end:
+        line = lines[i]
+        if not fenced[i] and line.strip() == AS_IT_STANDS:
+            from_label = i
+            opener = _next_nonblank(lines, i + 1, end)
+            if opener >= end or not fenced[opener]:
+                breaches.append(Breach(BreachKind.PAIR_INCOMPLETE, part.path, i + 1, line, accepted))
+                i += 1
+                continue
+            source, after = _fenced_passage(lines, fenced, opener)
+            becomes_label = _next_nonblank(lines, after, end)
+            if becomes_label >= end or fenced[becomes_label] or lines[becomes_label].strip() != BECOMES:
+                breaches.append(Breach(BreachKind.PAIR_INCOMPLETE, part.path, i + 1, line, accepted))
+                i = after
+                continue
+            becomes_opener = _next_nonblank(lines, becomes_label + 1, end)
+            if becomes_opener >= end or not fenced[becomes_opener]:
+                breaches.append(
+                    Breach(BreachKind.PAIR_INCOMPLETE, part.path, becomes_label + 1, lines[becomes_label], accepted)
+                )
+                # the becomes label is consumed: the scan's own orphan-label branch would report it again
+                i = becomes_label + 1
+                continue
+            becomes, after = _fenced_passage(lines, fenced, becomes_opener)
+            pairs.append(Pair(part.path, from_label + 1, target, source, becomes))
+            i = after
+            continue
+        if not fenced[i] and line.strip() == BECOMES:
+            breaches.append(Breach(BreachKind.PAIR_INCOMPLETE, part.path, i + 1, line, accepted))
+        i += 1
+    return pairs, breaches
+
+
 def read_design(path: str) -> Design:
     """The design at path, a monolith or a diced tree's entry point, read as the design form
     directs. Raises OSError where a file of the design cannot be read. Parts and breaches are in
@@ -594,8 +691,9 @@ def design_from_files(files: list[PlanFile]) -> Design:
     its tickets ENTRY parts, and the breaches of the delta rules. A diced design's head files are read
     to their Contents cut. Nothing is read from disk."""
     layout = read_layout(files, cut=os.path.basename(files[0].path) == ENTRY_POINT)
-    design = Design(breaches=list(layout.breaches))
+    design = Design(breaches=list(layout.breaches), files=[f.path for f in files])
     lines = {f.path: f.lines for f in files}
+    fenced = {f.path: f.fenced for f in files}
     deltas: dict[str, Part] = {}
     in_delta = False  # the last CATEGORY part met is a delta
     for part in layout.parts:
@@ -618,6 +716,17 @@ def design_from_files(files: list[PlanFile]) -> Design:
                     design.breaches.append(Breach(BreachKind.DELTA_CONTENT, path, no, lines[path][no - 1], accepted))
         elif in_delta:
             part = replace(part, kind=ENTRY)
+            heading_line = lines[part.path][part.first]
+            if len(link_targets(part.heading)) > 1 and part.title.strip():
+                accepted = "an entry heading carrying one link at most, so its target is the file that link names"
+                design.breaches.append(Breach(BreachKind.MULTI_LINK, part.path, part.first + 1, heading_line, accepted))
+            else:
+                target = _entry_target(part.heading, part.path)
+                part = replace(part, target=target)
+                if target is not None:
+                    pairs, pair_breaches = _entry_pairs(part, lines[part.path], fenced[part.path], target)
+                    part = replace(part, pairs=pairs)
+                    design.breaches += pair_breaches
         design.parts.append(part)
     if not deltas:
         opening = files[0]
@@ -641,13 +750,21 @@ def find_project_root(start: str) -> Optional[str]:
         directory = parent
 
 
+def document_locations(root: str, monolith: str) -> tuple[str, str]:
+    """The two paths the document named monolith can exist at under root: its monolith's path, then
+    its diced tree's entry-point path, neither read."""
+    return (
+        os.path.join(root, monolith),
+        os.path.join(root, os.path.splitext(monolith)[0], ENTRY_POINT),
+    )
+
+
 def active_document(root: str, monolith: str) -> Optional[str]:
     """The file to read for the project document named monolith (ACTIVE_PLAN, ACTIVE_DESIGN): the
     monolith where it exists, else its diced tree's entry point, else None."""
-    path = os.path.join(root, monolith)
+    path, entry = document_locations(root, monolith)
     if os.path.isfile(path):
         return path
-    entry = os.path.join(root, os.path.splitext(monolith)[0], ENTRY_POINT)
     return entry if os.path.isfile(entry) else None
 
 

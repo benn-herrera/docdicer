@@ -18,7 +18,7 @@ from dataclasses import asdict, dataclass, replace
 from typing import Any, Optional, TypeVar, Union
 from urllib.parse import quote
 
-from ..dicerlib.heads import CONTENTS, ENTRY_POINT, HEADS, INDEX, contents_line
+from ..dicerlib.heads import CONTENTS, ENTRY_POINT, HEADS, INDEX, contents_line, directory_head
 from ..dicerlib.linkcheck import markdown_files, prose_links
 from ..dicerlib.linkrewrite import never_rebased, rel
 from ..dicerlib.linkscan import link_targets, scan
@@ -179,11 +179,12 @@ def read_board(root: str) -> Board:
 
 def watched_files(root: str) -> list[str]:
     """Every file the board reads, or would read were it there, so that its creation is seen too;
-    each path normalized."""
+    each path normalized. A diced tree's leaves are watched where the tree is its document's active
+    form: only while the document's monolith is absent."""
     paths = [os.path.join(root, name) for name in (ROADMAP, ACTIVE_DESIGN, ACTIVE_PLAN)]
     for monolith in (ACTIVE_DESIGN, ACTIVE_PLAN):
         tree = os.path.join(root, os.path.splitext(monolith)[0])
-        if os.path.isdir(tree):
+        if os.path.isdir(tree) and not os.path.exists(os.path.join(root, monolith)):
             paths.extend(markdown_files([tree]))
     paths.extend(f for work in parked_work(root) for f in work.files)
     return [os.path.normpath(p) for p in paths]
@@ -192,7 +193,7 @@ def watched_files(root: str) -> list[str]:
 def served_files(root: str) -> list[str]:
     """Every `.md` file at the project root's top level and beneath its `PROJECT_DOCS/` and
     `ROADMAP_DESIGNS/` directories, and the active design's and the active plan's files in the form
-    read, sorted, each relative to root and `/`-separated. Reads none of them."""
+    read, sorted, each an absolute path; the server serves the path this gives. Reads none of them."""
     paths = [
         os.path.join(root, name)
         for name in os.listdir(root)
@@ -206,7 +207,7 @@ def served_files(root: str) -> list[str]:
         document = active_document(root, monolith)
         if document:
             paths += document_paths(document)
-    return sorted({root_relative(root, p) for p in paths})
+    return sorted({os.path.abspath(p) for p in paths})
 
 
 def move_to_design(root: str, card: dict[str, Any], *, read: dict[str, Optional[str]]) -> list[str]:
@@ -468,7 +469,7 @@ def _new_leaf(
     else:
         directory = os.path.join(top, DRAFTS_DIRECTORY)
         leaf = os.path.join(directory, f"{name}.md")
-        index = os.path.join(directory, INDEX)
+        index = directory_head(directory, tree_root=False)
         created = [leaf, index]
         listing = [
             contents_line("", text=DRAFTS, path=f"{DRAFTS_DIRECTORY}/{INDEX}"),
@@ -492,7 +493,8 @@ def _ticket_removed(root: str, now: _Read, part: Part) -> list[_Change]:
     has no line linking the leaf."""
     lines = now.lines[part.path]
     by_path = {os.path.normpath(p): p for p in now.lines}
-    heads = [os.path.normpath(os.path.join(os.path.dirname(part.path), name)) for name in HEADS]
+    directory = os.path.dirname(part.path)
+    heads = [os.path.normpath(directory_head(directory, tree_root=is_root)) for is_root in (True, False)]
     head = next((by_path[p] for p in heads if p in by_path), None)
     whole = all(is_blank(line) for line in lines[: part.first] + lines[part.last + 1 :])
     if not whole or head is None or os.path.basename(part.path) in HEADS:

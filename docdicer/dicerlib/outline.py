@@ -9,7 +9,7 @@ from .linkscan import plain_text
 from .textfile import FenceTracker
 
 _HEADING = re.compile(r"#+ ")
-_NUMBER = re.compile(r"[0-9]+(?:\.[0-9]+)*\.? ")
+_NUMBER = re.compile(r"([0-9]+(?:\.[0-9]+)*)\.? ")
 _NOT_SLUG = re.compile(r"[^a-z0-9]+")
 _ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
 DEEPEST_SPLIT_LEVEL = 4
@@ -39,7 +39,7 @@ def split_number(text: str) -> tuple[str, str]:
     m = _NUMBER.match(text)
     if not m:
         return "", text
-    return m.group()[:-1].removesuffix("."), text[m.end() :]
+    return m.group(1), text[m.end() :]
 
 
 def section_name(text: str) -> str:

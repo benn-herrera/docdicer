@@ -20,18 +20,25 @@ def _warn_duplicate_numbers(sections: list[Section], *, err: TextIO) -> None:
         print(f"duplicate section number {number}", file=err)
 
 
-def _tree(out: str, map_path: str) -> Tree:
-    """Links in a monolith are relative to the run directory, so it anchors their rebasing."""
+def _tree(root: str, out: str, map_path: str) -> Tree:
+    """Links in a monolith are relative to the run directory root, so it anchors their rebasing."""
     link_map = LinkMap.load(map_path) if map_path and os.path.isfile(map_path) else LinkMap()
-    return Tree(out=out, outabs=os.path.realpath(out), root=os.getcwd(), link_map=link_map)
+    return Tree(out=out, outabs=os.path.realpath(out), root=root, link_map=link_map)
 
 
 def dice_doc(
-    monolith: str, out: str, map_path: str, *, stdout: TextIO, stderr: TextIO, deepest: int = DEEPEST_SPLIT_LEVEL
+    monolith: str,
+    out: str,
+    map_path: str,
+    *,
+    root: str,
+    stdout: TextIO,
+    stderr: TextIO,
+    deepest: int = DEEPEST_SPLIT_LEVEL,
 ) -> int:
     """Split a monolith at headings of level 2 to deepest into a tree under out (empty or absent),
-    then check that the tree reassembles the monolith and that its links resolve. 0 ok, 1 a failed
-    step, 2 bad arguments."""
+    then check that the tree reassembles the monolith and that its links resolve; root is the run
+    directory the monolith's links are relative to. 0 ok, 1 a failed step, 2 bad arguments."""
     if not os.path.isfile(monolith):
         print(f"not a file: {monolith}", file=stderr)
         return 2
@@ -45,7 +52,7 @@ def dice_doc(
         print(f"out-dir not empty: {out}", file=stderr)
         return 2
     os.makedirs(out, exist_ok=True)
-    tree = _tree(out, map_path)
+    tree = _tree(root, out, map_path)
     lines = read_lines(monolith)
     sections, ok = plan_sections(lines, err=stderr, deepest=deepest)
     if not ok:
@@ -82,7 +89,8 @@ def _undiced_lines(tree: Tree, *, err: TextIO, deepest: int) -> tuple[list[str],
             except OSError:
                 print(f"undice: cannot read {tree.out}/{path}", file=err)
                 all_read = False
-    lines = _restored(parts, tree, [line for _, own in parts for line in own], deepest=deepest)
+    whole = [line for _, own in parts for line in own]
+    lines = _restored(parts, tree, whole, deepest=deepest)
     reads = []
     first = 1 + len(entry)
     for path, own in parts[1:]:
@@ -151,10 +159,13 @@ def _all_reproduced(
     return not strays
 
 
-def undice(out: str, monolith: str, *, stdout: TextIO, stderr: TextIO, deepest: int = DEEPEST_SPLIT_LEVEL) -> int:
+def undice(
+    out: str, monolith: str, *, root: str, stdout: TextIO, stderr: TextIO, deepest: int = DEEPEST_SPLIT_LEVEL
+) -> int:
     """Write the document the tree under out, diced at headings of level 2 to deepest, holds to
-    monolith, which must not exist, then check that dicing it at deepest reproduces the tree. 0 ok,
-    1 a failed check, 2 bad arguments."""
+    monolith, which must not exist, then check that dicing it at deepest reproduces the tree; root
+    is the run directory the document's links are relative to. 0 ok, 1 a failed check, 2 bad
+    arguments."""
     try:
         read_lines(os.path.join(out, ENTRY_POINT))
     except OSError:
@@ -163,7 +174,7 @@ def undice(out: str, monolith: str, *, stdout: TextIO, stderr: TextIO, deepest: 
     if os.path.lexists(monolith):
         print(f"{monolith} exists: name another output, or move or delete it", file=stderr)
         return 2
-    tree = _tree(out, "")
+    tree = _tree(root, out, "")
     lines, all_read, reads = _undiced_lines(tree, err=stderr, deepest=deepest)
     try:
         write_lines(monolith, lines)
@@ -185,24 +196,30 @@ def undice(out: str, monolith: str, *, stdout: TextIO, stderr: TextIO, deepest: 
 
 def _leaf_count(out: str) -> int:
     count = 0
-    for _, dirs, files in os.walk(out):
-        names = dirs + files
-        count += sum(n.endswith(".md") and n not in HEADS for n in names)
+    for _, _, files in os.walk(out):
+        count += sum(n.endswith(".md") and n not in HEADS for n in files)
     return count
 
 
 def verify(
-    map_path: str, pairs: list[tuple[str, str]], *, stdout: TextIO, stderr: TextIO, deepest: int = DEEPEST_SPLIT_LEVEL
+    map_path: str,
+    pairs: list[tuple[str, str]],
+    *,
+    root: str,
+    stdout: TextIO,
+    stderr: TextIO,
+    deepest: int = DEEPEST_SPLIT_LEVEL,
 ) -> int:
     """Re-run the reassembly and link checks on each (monolith, out) tree, diced at headings of
-    level 2 to deepest, once every tree a link points into exists. 0 when every check passes, else 1."""
+    level 2 to deepest, once every tree a link points into exists; root is the run directory the
+    monoliths' links are relative to. 0 when every check passes, else 1."""
     rc = 0
     for monolith, out in pairs:
         if not os.path.isdir(out):
             print(f"not a directory: {out}", file=stderr)
             rc = 1
             continue
-        tree = _tree(out, map_path)
+        tree = _tree(root, out, map_path)
         print(f"=== {monolith} -> {out}", file=stdout)
         try:
             lines = read_lines(monolith)

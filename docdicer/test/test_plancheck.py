@@ -35,12 +35,6 @@ def _run(plan, start: str = "") -> tuple[int, str, str]:
     [
         pytest.param({"ACTIVE_PLAN.md": _BREACHING}, "ACTIVE_PLAN.md", 1, id="monolith"),
         pytest.param({"ACTIVE_PLAN/entry-point.md": _BREACHING}, "ACTIVE_PLAN/entry-point.md", 1, id="tree"),
-        pytest.param(
-            {"ACTIVE_PLAN.md": _BREACHING, "ACTIVE_PLAN/entry-point.md": _CONFORMING},
-            "ACTIVE_PLAN.md",
-            1,
-            id="both-monolith-read",
-        ),
     ],
 )
 def test_default_is_the_active_plan(tmp_path, files, checked, status):
@@ -54,6 +48,46 @@ def test_default_is_the_active_plan(tmp_path, files, checked, status):
     assert got == status
     assert str(project / checked) in out
     assert str(project / checked) in err
+
+
+def test_both_forms_of_the_active_plan_are_refused(tmp_path):
+    project = tmp_path / "proj"
+    (project / ".git").mkdir(parents=True)
+    (project / "sub").mkdir()
+    _write(project, {"ACTIVE_PLAN.md": _BREACHING, "ACTIVE_PLAN/entry-point.md": _CONFORMING})
+
+    status, out, err = _run(None, start=str(project / "sub"))
+
+    assert (status, out) == (2, "")
+    assert str(project / "ACTIVE_PLAN.md") in err
+    assert str(project / "ACTIVE_PLAN/entry-point.md") in err
+    assert "remove one" in err
+
+
+def test_both_forms_are_refused_before_a_dangling_link_in_the_tree_is_read(tmp_path):
+    project = tmp_path / "proj"
+    (project / ".git").mkdir(parents=True)
+    _write(project, {"ACTIVE_PLAN.md": _BREACHING, "ACTIVE_PLAN/entry-point.md": _CONFORMING})
+    (project / "ACTIVE_PLAN/leaf.md").symlink_to("missing.md")
+
+    status, out, err = _run(None, start=str(project))
+
+    assert (status, out) == (2, "")
+    assert str(project / "ACTIVE_PLAN.md") in err
+    assert str(project / "ACTIVE_PLAN/entry-point.md") in err
+    assert "remove one" in err
+
+
+def test_a_named_plan_is_checked_where_both_forms_exist(tmp_path):
+    project = tmp_path / "proj"
+    (project / ".git").mkdir(parents=True)
+    _write(project, {"ACTIVE_PLAN.md": _BREACHING, "ACTIVE_PLAN/entry-point.md": _CONFORMING, "named.md": _BREACHING})
+
+    status, out, err = _run(str(project / "named.md"), start=str(project))
+
+    assert status == 1
+    assert str(project / "named.md") in out
+    assert str(project / "named.md") in err
 
 
 def test_no_active_plan_passes(tmp_path):
@@ -156,10 +190,10 @@ def test_a_read_failure_naming_no_file_names_the_plan(tmp_path, monkeypatch):
 _DESIGN_BREACHING = "# Design\n\n## Background\n"
 
 
-def _run_design(design, start: str = "") -> tuple[int, str, str]:
+def _run_design(design, start: str = "", *, deltas_applied: bool = False) -> tuple[int, str, str]:
     """check_design's status, stdout and stderr, run from start."""
     out, err = io.StringIO(), io.StringIO()
-    status = check_design(design, start=start, stdout=out, stderr=err)
+    status = check_design(design, start=start, stdout=out, stderr=err, deltas_applied=deltas_applied)
     return status, out.getvalue(), err.getvalue()
 
 
@@ -174,6 +208,19 @@ def test_default_is_the_active_design(tmp_path):
     assert status == 1
     assert str(project / "ACTIVE_DESIGN.md") in out
     assert str(project / "ACTIVE_DESIGN.md") in err
+
+
+def test_both_forms_of_the_active_design_are_refused(tmp_path):
+    project = tmp_path / "proj"
+    (project / ".git").mkdir(parents=True)
+    _write(project, {"ACTIVE_DESIGN.md": _DESIGN_BREACHING, "ACTIVE_DESIGN/entry-point.md": _DESIGN_BREACHING})
+
+    status, out, err = _run_design(None, start=str(project))
+
+    assert (status, out) == (2, "")
+    assert str(project / "ACTIVE_DESIGN.md") in err
+    assert str(project / "ACTIVE_DESIGN/entry-point.md") in err
+    assert "remove one" in err
 
 
 def test_no_active_design_passes(tmp_path):
@@ -229,6 +276,47 @@ def test_an_empty_found_line_is_named(tmp_path):
     assert status == 1
     (line,) = err.splitlines()
     assert "found an empty line" in line
+
+
+def test_the_default_designs_delta_claims_are_checked(tmp_path):
+    """Defect: the active design's pairs are read without the flag the command was given, so a design
+    whose pair has landed is reported as though its delta claims were not checked. Fails: `just test`."""
+    project = tmp_path / "project"
+    (project / ".git").mkdir(parents=True)
+    _write(
+        project,
+        {
+            "ACTIVE_DESIGN.md": "## SPEC delta\n\n### [target.md](target.md)\n\n**As it stands:**\n\n```\nold\n```"
+            "\n\n**Becomes:**\n\n```\nnew\n```\n",
+            "target.md": "new\n",
+        },
+    )
+
+    status, out, err = _run_design(None, start=str(project), deltas_applied=True)
+
+    assert (status, err) == (0, "")
+    assert "pairs: 1" in out
+    assert "landed: 1" in out
+
+
+def test_an_addition_whose_target_holds_both_passages_is_landed(tmp_path):
+    """Defect: without the addition rule, a pair whose becomes contains its from and whose target
+    holds both of its passages is reported conflicting. Fails: `just test`."""
+    _write(
+        tmp_path,
+        {
+            "design.md": "## SPEC delta\n\n### [target.md](target.md)\n\n**As it stands:**\n\n```\nold\n```\n\n"
+            "**Becomes:**\n\n```\nold and new\n```\n",
+            "target.md": "old\n\nold and new\n",
+        },
+    )
+
+    status, out, err = _run_design(str(tmp_path / "design.md"), deltas_applied=True)
+
+    assert status == 0
+    assert "landed: 1" in out
+    assert "conflicting: 0" in out
+    assert "conflicting" not in err
 
 
 _ROADMAP_BREACHING = "# Roadmap\n"

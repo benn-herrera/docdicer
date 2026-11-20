@@ -10,13 +10,14 @@ Must-see:
 
 ## §1 What docdicer is
 
-docdicer turns large markdown documents into trees of small linked files, checks development plans, designs and roadmaps, and shows them as a board. It guarantees five outcomes:
+docdicer turns large markdown documents into trees of small linked files, checks development plans, designs and roadmaps, and shows them as a board. It guarantees six outcomes:
 
 - **Navigable.** Every entry point and index lists the files directly below it, so the tree's entry point leads to every file; `check-tree` verifies this (§3, §8.5).
 - **Lossless.** Each line of the source appears in exactly one file, unaltered except for link rewriting (§4); this is verified after every dicing (§8.1).
 - **Linked.** Cross references in the source (`§N`, `#anchor`, relative paths) resolve in the tree (§4, §8.2, §8.4).
 - **Repeatable.** For every command but `kanban`, equal inputs give equal trees and messages, and nothing depends on the clock, the network, or any state outside the named inputs. `kanban`'s live server is state outside its named inputs.
-- **Non-destructive.** No command modifies a source document, except that `kanban` moves tickets between `ROADMAP.md` and the active design, in either direction, adds a parked card's link ticket to the active design, and removes a link ticket from it (§11.3).
+- **Non-destructive.** No command modifies a source document, except that `kanban` moves tickets between `ROADMAP.md` and the active design, in either direction, adds a parked card's link ticket to the active design, and removes a link ticket from it (§10.3).
+- **Reversible.** A tree `dice-doc` wrote can be written back to a document that dices to the same tree (§6.1).
 
 ## §2 Command line
 
@@ -31,9 +32,9 @@ The program is the command `docdicer <command> [arguments]`.
 | `check-links` | check relative links and anchors of any markdown files | §8.4 |
 | `check-tree` | check the structure of diced trees | §8.5 |
 | `check-plan` | check a plan's status form | §8.6 |
-| `check-design` | check a design's final form | §8.7 |
+| `check-design` | check a design's form and its deltas against their targets | §8.7 |
 | `check-roadmap` | check `ROADMAP.md`'s ticket layout | §8.8 |
-| `kanban` | serve a live board of the development process's files | §11 |
+| `kanban` | serve a live board of the development process's files | §10 |
 
 `docdicer --version` prints the version and exits 0. `-h`, alone or after a command, prints help and exits 0. A missing command, a wrong argument count, or an unknown option is a usage error.
 
@@ -43,17 +44,17 @@ The program is the command `docdicer <command> [arguments]`.
 
 **Streams.** Results and summaries go to stdout; diagnostics, warnings and failure details go to stderr, except where a command's section says otherwise.
 
-**Run directory.** Relative links in a source document, and paths in a manifest or link map (§5, §7), are resolved against the directory the command runs in, not the document's own directory.
+**Current directory.** Relative links in a source document, and paths in a manifest or link map (§5, §7), are resolved against the directory the command runs in, its current directory, not the document's own directory.
 
 **Text.** Files are read and written as UTF-8 with lines split on `\n` only. A line's other bytes, including `\r` and bytes that are not valid UTF-8, are preserved from input to output. Every line written is terminated by `\n`, so a file whose last line was unterminated gains a final newline.
 
 ## §3 The diced tree
 
-File names, the files a command writes and their content, exit statuses and the stream each message goes to are contract. Message wording is not: the messages below give current wording. What is contract is which fault or result each message reports, the values it carries, shown in `<angle brackets>` (a file, a line, a heading, a count), and the remedy it names.
+File names, the files a command writes and their content, exit statuses and the stream each message goes to are contract. What is contract in a message is which fault or result it reports, the values it carries, shown in `<angle brackets>` (a file, a line, a heading, a count), and the remedy it names. The wording itself is not: the messages below give current wording, which the test suite pins as it stands.
 
 ### §3.1 Which headings split
 
-A heading is a line of 1 to 6 `#` at column 0 followed by a space, outside fenced code. A fenced block opens at a line of at least three backticks or tildes (indentation by spaces allowed; a backtick fence's info string holds no backtick) and closes at a line of the same character, at least as many, followed only by spaces; an unclosed fence runs to the end of the document. No line inside fenced code is read as a heading, table, list item or other element of any form or layout docdicer reads (§8.6 to §8.8, §11); it is text of the part that holds it, and its content is never read as a breach of a form.
+A heading is a line of 1 to 6 `#` at column 0 followed by a space, outside fenced code. A fenced block opens at a line of at least three backticks or tildes (indentation by spaces allowed; a backtick fence's info string holds no backtick) and closes at a line of the same character, at least as many, followed only by spaces; an unclosed fence runs to the end of the document. No line inside fenced code is read as a heading, table, list item or other element of any plan, design, layout or roadmap form (§8.6 to §8.8); it is text of the part that holds it, and its content is never read as a breach of a form.
 
 | Level | Role |
 |---|---|
@@ -107,7 +108,7 @@ Contents:
 
 ## §4 Link rewriting
 
-Rewriting applies to prose lines only: not to lines of fenced code, and not to text inside code spans. A code span opens at a run of backticks and closes at the next run of the same length; an unmatched run is literal text.
+Rewriting applies to text outside fenced code and code spans only: not to lines of fenced code, and not to text inside code spans. A code span opens at a run of backticks and closes at the next run of the same length; an unmatched run is literal text.
 
 ### §4.1 What is a link
 
@@ -130,7 +131,7 @@ After the section pass, stderr carries one summary line: `refs linked: <R>; dang
 Each link's target is classified in this order:
 
 1. **Anchor of this document** (`#frag`, where `frag` is the GitHub-style anchor of one of the document's headings; §4.4). The target becomes the file holding that heading, relative to the linking file; plus `#<anchor within that file>` unless the heading is the first line of a non-entry file. The entry point's own headings keep their anchor.
-2. **Left unchanged:** an empty target, any other `#...` target, a target opening with `/`, and a target opening with a lowercase-letter scheme and `:` (`https:`, `mailto:`).
+2. **Left unchanged:** an empty target, any other `#...` target, a target opening with `/`, and a target opening with a scheme: one or more lowercase ASCII letters followed by `:` (`https:`, `mailto:`).
 3. **A diced document in the link map** (§5): the target's path part (before any `#`) equals a map document key. The target becomes that document's entry point and any fragment is dropped; if the text following the link opens with an optional comma, spaces and a double-quoted heading title that the map lists for that document, the target is that heading's leaf instead. The text after the link is the rest of its line; when that rest is empty or only `,` and spaces, the next line is taken as its continuation. The quoted text itself is left in place.
 4. **Any other relative path** is rebased (§2) to reach the same file from the directory of the file it now sits in, fragment kept.
 
@@ -169,7 +170,7 @@ Otherwise `out-dir` is created if absent, the tree is written, and stderr receiv
 
 `docdicer undice [--split-level <level>] <tree-dir> <monolith.md>` writes the document a diced tree holds as one file. `<level>` (§2) names the deepest split level the tree was diced at; links are restored at that level. `<monolith.md>` need not be the document the tree was diced from.
 
-**Round trip.** For a tree as `dice-doc` wrote it at `<level>` without a map, with well-formed Contents links (§10): move `<tree-dir>` aside and dice the unchanged `<monolith.md>` with `dice-doc` at `<level>`, without a map, from the same run directory, into `<tree-dir>`; the new tree equals the old byte for byte.
+**Round trip.** For a tree as `dice-doc` wrote it at `<level>` without a map, with well-formed Contents links (§10): move `<tree-dir>` aside and dice the unchanged `<monolith.md>` with `dice-doc` at `<level>`, without a map, from the same current directory, into `<tree-dir>`; the new tree equals the old byte for byte.
 
 | Condition | stderr | Exit |
 |---|---|---|
@@ -181,7 +182,7 @@ Otherwise `out-dir` is created if absent, the tree is written, and stderr receiv
 
 - A section link (§4.2 step 3) becomes its link text: `§<number>`, or `§<number>` and the backticked name.
 - A link to a heading's place in the tree, as §4.3 step 1 writes it, becomes `#<anchor>`, the heading's anchor in `<monolith.md>` (§4.4).
-- Every other relative link is rebased from its file's directory to the run directory, fragment kept. Links left unchanged by §4.3 step 2 stay unchanged.
+- Every other relative link is rebased from its file's directory to the current directory, fragment kept. Links left unchanged by §4.3 step 2 stay unchanged.
 
 **Self-check.** After writing, `<monolith.md>` is planned at `<level>` (§3, its messages to stderr as in §6); a planning failure exits 1 there. Otherwise the reassembly and link checks (§8.1, §8.2) run on it against `<tree-dir>`, with their messages and streams as in §6. Every `.md` file under `<tree-dir>` must also be one §3.2 assigns, except files under a directory below the root that holds its own `entry-point.md` (a nested volume). Each other prints to stderr, naming the remedy rather than applying one:
 
@@ -229,7 +230,7 @@ In order:
 5. Each volume is diced as by `dice-doc` (§6) with the link map. Its output is preceded by `=== <file>` on stdout; its stderr is merged into stdout, and its `dead link:` lines are suppressed. A failed dicing does not stop the others; it surfaces in step 7.
 6. Group indexes and the entry point are written (§7.1).
 7. `verify` (§8.3) runs on every volume with the link map.
-8. A final check over the files written in step 6 prints `=== files written by this script: link targets exist`, then `  checked <file>` per file, and `  DEAD <file> -> <target>` for each link (§4.1) in the prose (§4) of those files whose target ends in `.md`, has no `#`, and names no existing file relative to the file's directory.
+8. A final check over the files written in step 6 prints `=== files written by this script: link targets exist`, then `  checked <file>` per file, and `  DEAD <file> -> <target>` for each link (§4.1) in the text (§4) of those files whose target ends in `.md`, has no `#`, and names no existing file relative to the file's directory.
 
 Exit 0 only if step 7 and step 8 pass; otherwise 1.
 
@@ -246,11 +247,11 @@ Passes when the files §3.2 assigns, read in section order with each entry point
 | no Contents block | `reassemble: no Contents block in <file>` |
 | line count | `reassemble: leaves hold <K> lines, monolith <M>` |
 
-The check compares lines, not final newlines (§2). Lines added after a Contents block (§7.1) are outside its scope.
+The check compares lines, not final newlines (§2). Lines added after a Contents block (§7.1) are not checked.
 
 ### §8.2 Link check
 
-Every link in the prose of every file §3.2 assigns, taken without its `#fragment`, must name a readable file relative to that file's directory. Skipped: empty targets (bare `#frag`), targets opening with `/`, and targets with a URL scheme (§4.3 step 2). Everything else is probed relative to the file and so is dead unless it exists there; a directory is dead. An assigned file that cannot be read contributes no links (§8.1 reports it). Each dead link prints `dead link: <file>:<line> -> <target>` to the error stream; the summary `links checked: <N>, dead: <D>` goes to the output stream.
+Every link in the text (§4) of every file §3.2 assigns, taken without its `#fragment`, must name a readable file relative to that file's directory. Skipped: empty targets (bare `#frag`), targets opening with `/`, and targets with a URL scheme (§4.3 step 2). Everything else is probed relative to the file and so is dead unless it exists there; a directory is dead. An assigned file that cannot be read contributes no links (§8.1 reports it). Each dead link prints `dead link: <file>:<line> -> <target>` to the error stream; the summary `links checked: <N>, dead: <D>` goes to the output stream.
 
 ### §8.3 `verify`
 
@@ -260,7 +261,7 @@ Every link in the prose of every file §3.2 assigns, taken without its `#fragmen
 
 `docdicer check-links <root>...` checks markdown files that need not come from a dicing. A directory root contributes every `.md` file beneath it in sorted order; a file root is checked alone; a file reached twice is checked once. Every root must exist, else exit 2 (`no such root: <roots>`). Every file so contributed must be readable as a file; before any link is checked, each that is not prints `cannot read: <path>` to stderr and the command exits 2.
 
-In prose outside fenced code and code spans, every link is checked except those with an empty target, a target opening with `/`, or a URL scheme (§4.3 step 2). The target's path part (the linking file itself, if empty) must exist, else the problem is `missing file`; given a `#fragment` it must name a markdown file with a heading whose anchor equals the fragment (§4.4, repeats counted over the file), else `missing anchor`. Each problem prints to stderr `<file>:<line>: <target>: <problem>`. The summary `links checked: <N>, broken: <B>` goes to stdout. Exit 1 if any link is broken.
+In text outside fenced code and code spans, every link is checked except those with an empty target, a target opening with `/`, or a URL scheme (§4.3 step 2). The target's path part (the linking file itself, if empty) must exist, else the problem is `missing file`; given a `#fragment` it must name a markdown file with a heading whose anchor equals the fragment (§4.4, repeats counted over the file), else `missing anchor`. Each problem prints to stderr `<file>:<line>: <target>: <problem>`. The summary `links checked: <N>, broken: <B>` goes to stdout. Exit 1 if any link is broken.
 
 ### §8.5 `check-tree`
 
@@ -278,17 +279,17 @@ Links count as in §8.4. The summary `documents checked: <N>, problems: <P>` goe
 
 ### §8.6 `check-plan`
 
-`docdicer check-plan [<plan>]` checks that a development plan is written in the form below, so that a program reading the plan can read all of it. The form is devpro's plan status form. The command reports what is present and unreadable, and a post-plan review or burndown package without the other; what is otherwise absent is valid.
+`docdicer check-plan [<plan>]` checks that a development plan is written in the form below, so that a program reading the plan can read all of it. The command reports what is present and unreadable, and a post-plan review or burndown package without the other; what is otherwise absent is valid.
 
 **Terms.**
 
-- **plan**: a tracked markdown document that lays out work as work packages and records their progress. It is a monolith, one file, or a diced tree (§3) given by its `entry-point.md`: a file named `entry-point.md` is read as one plan together with every other `.md` file beneath its directory, the entry point first.
+- **plan**: a tracked markdown document that lays out work as work packages and records their progress. It is a monolith, one file, or a diced tree (§3) given by its `entry-point.md`: a file named `entry-point.md` is read as one plan together with every other `.md` file beneath its directory, in **the plan's file order**, the entry point first.
 - **work package**: one unit of a plan's work, a row of the plan's status table, named by the ID in that row's `Package` cell. A row whose `Package` cell is empty is not a work package.
 - **status table**: the first table under a `## Status` heading (a level-2 heading whose text is `Status`; the section runs to the next heading of level 1 or 2) whose header cells include `Package` and `State`, matched without regard to case. In a diced plan the heading may be in any of its files. The table is found by those two headers alone. The form also has a `Rating` header, matched without regard to case; other columns are free.
 - **state**: a work package's progress as its State cell records it. A cell opening with `drafted` (not yet ready to hand to an agent as it stands), `dispatchable` (ready to hand to an agent), `in progress` (dispatched, not yet landed) or `landed` (accepted and committed) states that word, lowercase and without markup, as a whole word; any text after it is a note.
 - **rating**: a work package's kind of work as its Rating cell records it. A cell opening with `mechanical` (every edit enumerated, no design choice and no debugging) or `expert` (anything else) states that word, lowercase and without markup, as a whole word; any text after it is a note. A package whose Rating cell opens with neither word, an empty cell included, or whose table has no `Rating` column, is **unrated**.
 - **release line**: a line opening with `Release:` at column 0. Its version is the text after the colon, surrounding spaces removed.
-- **title**: in the first heading, in reading order, whose text opens with a work package's ID — the ID followed by neither a letter, digit or `_`, nor a `.` or `-` followed by one — the text after the ID and after any run of characters each whitespace or one of `:` `.` `,` `;` `|` `/` `)` `]` `-` `–` `—`. A package with no such heading is untitled and is neither post-plan package kind.
+- **title**: in the first heading, in the plan's file order, whose text opens with a work package's ID — the ID followed by neither a letter, digit or `_`, nor a `.` or `-` followed by one — the text after the ID and after any run of characters each whitespace or one of `:` `.` `,` `;` `|` `/` `)` `]` `-` `–` `—`. A package with no such heading is untitled and is neither post-plan package kind.
 - **post-plan review package**, **post-plan burndown package**: A title opens with `Post-plan review` (or `Post-plan burndown`) where it begins with those characters, case-sensitive, followed by the end of the title or a character that is not a letter or digit. A package whose title opens with `Post-plan review` is a **post-plan review package**; with `Post-plan burndown`, a **post-plan burndown package**.
 
 **The form, as checked.** A plan with no status table, no work packages, no H1 heading, no release line or neither post-plan package is valid. A plan has a breach where:
@@ -306,7 +307,7 @@ Links count as in §8.4. The summary `documents checked: <N>, problems: <P>` goe
 
 The form also has a work package's heading, at any level, open with its row's ID and then its title. `check-plan` reads titles (§8.6 Terms) for the post-plan pairing, but does not check the heading, and reports no missing heading: a heading that fails to open with the ID cannot be told from one that only mentions it. Tools reading the plan show such a package untitled.
 
-**The plan checked.** With `<plan>`, that plan. Without it, the active plan of the project the command runs in. The **project root** is the nearest ancestor of the current directory, the directory itself included, that holds an entry named `.git`, found by looking at the file system; git is not run. The active plan is `ACTIVE_PLAN.md` under the root, else `ACTIVE_PLAN/entry-point.md`; where both exist, the monolith is checked. The active design is never read.
+**The plan checked.** With `<plan>`, that plan. Without it, the active plan of the project the command runs in. The **project root** is the nearest ancestor of the current directory, the directory itself included, that holds an entry named `.git`, found by looking at the file system; git is not run. The active plan is `ACTIVE_PLAN.md` under the root, or `ACTIVE_PLAN/entry-point.md` where the monolith is absent. Where both exist as files, the command exits 2 before reading either, with the message the exit table below gives for that case. The message's `<monolith>` and `<entry-point>` are the two files' absolute paths. The active design is never read.
 
 **Output.** One line to stderr per breach:
 
@@ -328,7 +329,7 @@ The form also has a work package's heading, at any level, open with its row's ID
 | review without burndown | `post-plan review has no post-plan burndown package` |
 | burndown without review | `post-plan burndown has no post-plan review package` |
 
-Problems are printed in reading order: by file, in the plan's reading order (the entry point first, §8.6 Terms), then by line within a file.
+Problems are printed in the plan's file order (the entry point first, §8.6 Terms): by file, then by line within a file.
 
 The summary `plan checked: <plan>, work packages: <N>, problems: <P>` goes to stdout, `<N>` counting the rows with a non-empty `Package` cell.
 
@@ -341,14 +342,18 @@ The summary `plan checked: <plan>, work packages: <N>, problems: <P>` goes to st
 | any breach | stderr, stdout | the breach lines, the summary | 1 |
 | `<plan>` is not a file | stderr | the usage error `no such plan file: <plan> (name a plan's markdown file, or a diced plan's entry-point.md)` | 2 |
 | without `<plan>`, no project root | stderr | `no project root: neither <directory> nor any directory above it holds .git; run docdicer check-plan inside a project, or name the plan to check: docdicer check-plan <plan>` | 2 |
+| without `<plan>`, both forms of the active plan exist | stderr | `both forms of the active plan exist: <monolith> and <entry-point>: remove one` | 2 |
 | a file of the plan cannot be read | stderr | `cannot read: <file>` | 2 |
 
-A plan with an unreadable file exits 2 naming an unreadable file, before any breach or summary is printed. A diced plan's unreadable file is any `.md` file beneath the entry point's directory that cannot be read as a file, a dangling symbolic link among them.
+A plan with an unreadable file exits 2 naming an unreadable file, and a command without `<plan>` in a project holding both forms of the active plan exits 2 naming both files — each before any breach or summary is printed. A diced plan's unreadable file is any `.md` file beneath the entry point's directory that cannot be read as a file, a dangling symbolic link among them.
 
 ### §8.7 `check-design`
 
-`docdicer check-design [<design>]` checks that a design is in its final form, ready to plan from.
-It is not a progress check: a design still in progress fails it.
+`docdicer check-design [--deltas-applied] [<design>]` checks that a design is in its final form,
+ready to plan from: beside the form, every pair's from passage still matches its target, so a
+design is accepted only against the targets it changes. With `--deltas-applied` it instead checks
+that every pair has been applied: its target holds the becomes passage and no longer the from, an
+addition excepted. A design still being drafted fails it in either mode.
 
 **Terms.** §8.6's terms, and §8.8's (below: layout, category, ticket, old-form item), are used as
 defined there, with these additions:
@@ -371,6 +376,16 @@ defined there, with these additions:
   removed) is exactly `SPEC delta`, `ARCHITECTURE delta` or `Code delta`; that is their **order**.
   Its **delta** runs to the next heading of level 1 or 2, or the end of the design.
 - **entry**: a ticket (§8.8) inside a delta. A delta with no entries is valid.
+- **target**: the file an entry heading's one link names, resolved relative to the file the entry is
+  in (§4). A heading whose link is empty, opens with `#`, or opens with a scheme (§4.3 step 2)
+  gives no target; a fragment-only link's fragment is not resolved here, `check-links` doing that
+  (§8.4). An entry heading that carries more than one link gives no target.
+- **pair**: in an entry with a target, an `**As it stands:**` line — outside fenced code, alone
+  on its line — and the fenced block whose opening line is the next non-blank line after it, the
+  pair's **from**, then a `**Becomes:**` line — outside fenced code, alone on its line — and the
+  fenced block whose opening line is the next non-blank line after it, the pair's **becomes**.
+  An entry without a target has no pairs. The checks below run over an entry's pairs and its
+  heading's links; its other text and unlabeled fenced blocks are not checked.
 
 Every line outside a delta is free except a level-2 heading and what the layout (§8.8) does not
 admit.
@@ -386,11 +401,40 @@ breach of the design form, reported as §8.8 reports it. The delta rules add the
 | a delta heading, not a repeat, that follows a delta heading the order places after it | that heading | the heading line |
 | no delta heading | the H1, else line 1 of the design's first file | the line |
 | a non-blank line inside a delta before its first entry, other than one the layout reports; reported once per delta, at the first such line | the line | the line |
+| an entry heading that carries more than one link and whose title is not empty once its links are reduced to their text | the heading | the heading line |
+| a pair label that opens no pair | the label line | the line |
+| a pair's target that cannot be read | the pair's `**As it stands:**` line | the target's path |
+| a pair whose from does not match | the pair's `**As it stands:**` line | the from passage's first line |
+| a pair that has drifted | the pair's `**As it stands:**` line | the from passage's first line |
+| a pair that is conflicting | the pair's `**As it stands:**` line | the from passage's first line |
+
+Each form breach's accepted form is the form the Terms give, except a pair's, whose accepted text
+the delta claims give.
 
 Whether an entry's link resolves is not checked: `check-links` does that (§8.4).
 
-**The design checked.** With `<design>`, that design. Without it, the active design (§11.1) of
-the project root (§8.6).
+**The delta claims.** The check reads each pair's target file and matches its passages against
+the target's text with each run of whitespace on either side read as one space, every other
+character exact. Without `--deltas-applied`, every pair's from must match; one that does not is
+a breach. With `--deltas-applied`, the matching of both passages classifies each pair: from
+present and becomes absent, the pair is **pending**; from absent and becomes present, it is
+**landed**; both absent, it is **drifted**; both present, it is **conflicting**. A pair whose
+target cannot be read has no matching to classify and is **unreadable**. An addition is a pair
+whose from passage is not empty and whose becomes passage contains it: a present becomes means
+landed, a present from alone means pending, and an addition is never conflicting. A pair whose
+from passage contains its becomes passage is a removal: it is conflicting while its from is
+present, and landed only once its from is gone. Landed is the passing state, pending the expected
+mid-execution state; a drifted or conflicting pair is a
+breach. Each pair breach is reported at the pair's `**As it stands:**` line, its `accepted` text
+`matching in <target>`; a target that cannot be read is a breach reported there too, its
+`accepted` text `a readable target file`. Where a drifted or conflicting pair's target is also
+the target of a landed pair of the same design, the breach line is followed on stderr by
+`interference: <target> also holds the becomes passage of a landed pair of this design`. The
+checks read their targets, never write them.
+
+**The design checked.** With `<design>`, that design. Without it, the active design of the
+project root (§8.6), at the path §10.1 gives; where both exist as files,
+the command exits 2 before reading either.
 
 **Output.** One stderr line per breach, in the form §8.6 gives (`<file>:<line>: <problem>:
 <found>; accepted: <accepted form>`), in document order. An empty `found` text renders as §8.8
@@ -404,21 +448,39 @@ gives. Current `<problem>` wording:
 | delta heading out of order | `delta heading out of order` |
 | no delta heading | `design has no delta` |
 | content before the first entry | `delta holds content outside an entry` |
+| an entry heading that carries more than one link | `entry heading carries more than one link` |
+| a pair label that opens no pair | `pair is incomplete` |
+| a pair's target that cannot be read | `target cannot be read` |
+| a pair whose from does not match | `from not found` |
+| a pair that has drifted | `pair has drifted` |
+| a pair that is conflicting | `pair is conflicting` |
 
-The summary `design checked: <design>, entries: <N>, problems: <P>` goes to stdout.
+The summary `design checked: <design>, entries: <N>, problems: <P>` goes to stdout. With
+`--deltas-applied`, one stdout line per pair, in document order,
+`<file>:<line>: <state>: <target>` — `<line>` the pair's `**As it stands:**` line's number,
+`<state>` one of pending, landed, drifted, conflicting, unreadable — and the summary is
+`design checked: <design>, pairs: <N>, landed: <L>, pending: <G>, drifted: <D>, conflicting: <C>,
+problems: <P>`. A pair counted in no state is unreadable: its count is `<N>` less the four
+states' sum.
 
 **Exit status.** As §8.6's table, with these changes: in the row "without `<plan>`, no active
-plan under the root", the message is `no active design in <root>`; a named design that is not a
-file is the usage error `no such design file: <design> (name a design's markdown file, or a diced
-design's entry-point.md)`; the no-project-root message names `docdicer check-design` and
-`docdicer check-design <design>`. A diced design's unreadable file is as a diced plan's (§8.6), or
-a `.md` file beneath the entry point's directory that a Contents link names and that cannot be
-read as a file: `cannot read: <file>`, exit 2. A Contents link to anything else is ignored (Terms).
+plan under the root", the message is `no active design in <root>`; the row "without `<plan>`,
+both forms of the active plan exist" applies with `design` for `plan`, and its message is
+`both forms of the active design exist: <monolith> and <entry-point>: remove one`; a named
+design that is not a file is the usage error `no such design file: <design> (name a design's
+markdown file, or a diced design's entry-point.md)`; the no-project-root message names
+`docdicer check-design` and `docdicer check-design <design>`. A diced design's unreadable file is
+as a diced plan's (§8.6), or a `.md` file beneath the entry point's directory that a Contents
+link names and that cannot be read as a file: `cannot read: <file>`, exit 2. A Contents link to
+anything else is ignored (Terms). With `--deltas-applied`, the command returns 0 where every
+pair has landed and no breach stands, and 1 while any pair has not landed or a breach stands:
+the summary's counts and the stderr breach lines say which pairs remain, pending being the
+expected mid-execution state rather than a fault of the design.
 
 ### §8.8 `check-roadmap`
 
 `docdicer check-roadmap [<roadmap>]` checks that `ROADMAP.md` is written in the ticket layout
-below, so that the board shows every ticket it holds (§11.2). `check-design` (§8.7) and the board
+below, so that the board shows every ticket it holds (§10.2). `check-design` (§8.7) and the board
 read the active design in the same layout.
 
 **Terms.** §8.6's terms are used as defined there, with these additions:
@@ -471,23 +533,24 @@ roadmap's markdown file)`; the no-project-root message names `docdicer check-roa
 `docdicer check-roadmap <roadmap>`; a file checked that cannot be read prints
 `cannot read: <roadmap>`, exit 2.
 
-## §10 Limits
+## §9 Limits
 
 Input outside this specification is refused with a message naming what to fix, not accommodated. Known limits:
 
-- A source's links must be written relative to the run directory (§2); a document run from elsewhere gets mis-rebased links, which the link check (§8.2) reports only if the result no longer resolves.
+- A source's links must be written relative to the current directory (§2); a document run from elsewhere gets mis-rebased links, which the link check (§8.2) reports only if the result no longer resolves.
 - `verify` treats a map path that is not a file as no map.
-- A section's Contents link text (§3.3) is not escaped: a title containing `]` or unbalanced brackets yields a malformed Contents link that no command repairs. `check-tree` reports it, and `undice` reports that section's file as not reproduced. The same holds for the Contents lines `kanban` writes for a ticket moved into a diced design (§11.3); moving such a ticket back to Roadmap is refused, since the head has no line linking its leaf.
+- A section's Contents link text (§3.3) is not escaped: a title containing `]` or unbalanced brackets yields a malformed Contents link that no command repairs. `check-tree` reports it, and `undice` reports that section's file as not reproduced. The same holds for the Contents lines `kanban` writes for a ticket moved into a diced design (§10.3); moving such a ticket back to Roadmap is refused, since the head has no line linking its leaf.
 - `undice` on a `dice-docs` volume is best effort: links made through a link map come back as paths, and its self-check (§6.1) reports what does not round-trip.
-- A project root with no name of its own, the file-system root `/`, gives the kanban page an empty `<project>` (§11.2).
+- A project root with no name of its own, the file-system root `/`, gives the kanban page an empty `<project>` (§10.2).
+- A pair's block whose closing fence is immediately followed by another opening fence reads as one passage to the pair reader, not the two blocks §3.1's closer rule would give: the fence flags cannot tell the one block's closer from the other's opener (§7 of the architecture document). The two passages then match over text §8.7 does not define as the pair's, and `check-design`'s per-pair breach lines do not say so.
 
-## §11 `kanban`
+## §10 `kanban`
 
-`docdicer kanban [<project-dir>]` serves a live board of a project's development-process files on the local machine, for the user to open in a browser. The board shows `ROADMAP.md`'s tickets and the parked work, the active design and the active plan's work packages as cards in columns. Its only writes to documents are the moves of §11.3, made by dropping a card on Design or on Roadmap: a ticket moved between `ROADMAP.md` and the active design, after which it is in exactly one of the two documents (a move that fails partway is described under **Writes**, §11.3); a parked card's link ticket added to the active design; and a link ticket removed from it. The plan columns are read-only: a work package's state changes only by an edit to the plan, which the board then shows (§11.4, §11.5). The board stores nothing (§11.6).
+`docdicer kanban [<project-dir>]` serves a live board of a project's development-process files on the local machine, for the user to open in a browser. The board shows `ROADMAP.md`'s tickets and the parked work, the active design and the active plan's work packages as cards in columns. Its only writes to documents are the moves of §10.3, made by dropping a card on Design or on Roadmap: a ticket moved between `ROADMAP.md` and the active design, after which it is in exactly one of the two documents (a move that fails partway is described under **Writes**, §10.3); a parked card's link ticket added to the active design; and a link ticket removed from it. The plan columns are read-only: a work package's state changes only by an edit to the plan, which the board then shows (§10.4, §10.5). The board stores nothing (§10.6).
 
 The board reads the files as they are, `ROADMAP.md` in the layout `check-roadmap` checks (§8.8), a plan in the form `check-plan` checks (§8.6) and the active design in the form `check-design` checks (§8.7), and shows a document that holds breaches of its form all the same. Terms of §8.6 (plan, work package, state, rating, title, status table, release line, project root, active plan), of §8.7 (design, delta, entry, document order) and of §8.8 (layout, category, ticket, a ticket's title) are used as defined there.
 
-**Start.** `<project-dir>` names a directory inside the project; without it the project is the one the command runs in. The project root is found from that directory as §8.6 defines it. Once the server is listening it prints the page's URL, `http://127.0.0.1:<port>/`, on a line of its own to stdout; the user opens that URL. The server accepts connections from the local machine only (`127.0.0.1`), and refuses a request whose `Host` header is not the server's own address (`127.0.0.1` or `localhost`, with the port), so that a page served from elsewhere cannot drive the board. The server serves the served documents, and no other file of the project: every `.md` file at the project root's top level, every `.md` file beneath the project's `PROJECT_DOCS/` and `ROADMAP_DESIGNS/` directories, and the active design's and active plan's files as the form reads them (§11.1, a diced tree's leaves included); each read-only, as `text/markdown`, at the URL path that is the file's path from the project root. A served file that cannot be read is answered 404, the others still served. It then runs until interrupted (Ctrl-C) or stopped from the page (§11.5); either ends the process with exit 0. Which port it listens on is not fixed by this SPEC: the printed URL is the address. The server writes nothing per request: stdout carries the URL line only, and stderr carries only the diagnostics named in this section (§11.5).
+**Start.** `<project-dir>` names a directory inside the project; without it the project is the one the command runs in. The project root is found from that directory as §8.6 defines it. Once the server is listening it prints the page's URL, `http://127.0.0.1:<port>/`, on a line of its own to stdout; the user opens that URL. The server accepts connections from the local machine only (`127.0.0.1`), and refuses a request whose `Host` header is not the server's own address (`127.0.0.1` or `localhost`, with the port), so that a page served from elsewhere cannot drive the board. The server serves the served documents, and no other file of the project: every `.md` file at the project root's top level, every `.md` file beneath the project's `PROJECT_DOCS/` and `ROADMAP_DESIGNS/` directories, and the active design's and active plan's files as the form reads them (§10.1, a diced tree's leaves included); each read-only, as `text/markdown`, at the URL path that is the file's path from the project root. A served file that cannot be read is answered 404, the others still served. It then runs until interrupted (Ctrl-C) or stopped from the page (§10.5); either ends the process with exit 0. Which port it listens on is not fixed by this SPEC: the printed URL is the address. The server writes nothing per request: stdout carries the URL line only, and stderr carries only the diagnostics named in this section (§10.5).
 
 | Condition | Stream | Message | Exit |
 |---|---|---|---|
@@ -497,7 +560,7 @@ The board reads the files as they are, `ROADMAP.md` in the layout `check-roadmap
 | a document the board reads cannot be read as a file, at start | stderr | `cannot read: <file>`, before any URL is printed | 2 |
 | the port cannot be bound | stderr | `cannot listen: <reason>`, before any URL is printed | 2 |
 
-### §11.1 The project's files
+### §10.1 The project's files
 
 Under the project root the files are at fixed paths; nothing relocates them.
 
@@ -509,36 +572,36 @@ Under the project root the files are at fixed paths; nothing relocates them.
 | **parked-designs directory** | `ROADMAP_DESIGNS/` |
 | **project-documents directory** (where present) | `PROJECT_DOCS/` |
 
-Where both forms of the active design or the active plan exist, the monolith is read. **Parked work** is each `.md` file in the parked-designs directory other than `README.md`, a **parked file**, and each subdirectory there holding its own `entry-point.md`, a **parked tree**. Each has a **parked name**: a parked file's name without `.md`, a parked tree's directory name. A parked name `<topic>_DESIGN`, `<topic>_PLAN` or `<topic>_PLAN_REVIEW` makes `<topic>` a **topic**. A parked name that is `<topic>` or opens with `<topic>_` joins that topic, the longest where it could join more than one. The parked files and trees of one topic are one **piece of parked work**, whose parked name is `<topic>`; each other parked file or tree is a piece of its own, keeping its parked name. A piece's **files** are its parked files and its parked trees' `entry-point.md`, in order of their paths. A **link ticket** is a ticket of the active design, outside any delta, for a piece of parked work that no roadmap ticket links, whose lines are exactly `### <name>`, a blank line, a line `[<path>](<link>)` for each of the piece's files, in order, a blank line and `complete and update this design`, where `<name>` is the piece's parked name, each `<path>` a file's path from the project root and its `<link>` that path relative to the directory of the file holding the ticket. A document that is absent contributes no cards; a project with none of them shows an empty board.
+Where both forms of the active design or the active plan exist, the board reads the monolith. **Parked work** is each `.md` file in the parked-designs directory other than `README.md`, a **parked file**, and each subdirectory there holding its own `entry-point.md`, a **parked tree**. Each has a **parked name**: a parked file's name without `.md`, a parked tree's directory name. A parked name `<topic>_DESIGN`, `<topic>_PLAN` or `<topic>_PLAN_REVIEW` makes `<topic>` a **topic**. A parked name that is `<topic>` or opens with `<topic>_` joins that topic, the longest where it could join more than one. The parked files and trees of one topic are one **piece of parked work**, whose parked name is `<topic>`; each other parked file or tree is a piece of its own, keeping its parked name. A piece's **files** are its parked files and its parked trees' `entry-point.md`, in order of their paths. A **link ticket** is a ticket of the active design, outside any delta, for a piece of parked work that no roadmap ticket links, whose lines are exactly `### <name>`, a blank line, a line `[<path>](<link>)` for each of the piece's files, in order, a blank line and `complete and update this design`, where `<name>` is the piece's parked name, each `<path>` a file's path from the project root and its `<link>` that path relative to the directory of the file holding the ticket. A document that is absent contributes no cards; a project with none of them shows an empty board.
 
-### §11.2 Columns and cards
+### §10.2 Columns and cards
 
-The board has six columns, left to right: Roadmap, Design, Drafted, Dispatchable, In progress, Landed. Drafted through Landed are the **plan columns**, which are read-only (§11.4).
+The board has six columns, left to right: Roadmap, Design, Drafted, Dispatchable, In progress, Landed. Drafted through Landed are the **plan columns**, which are read-only (§10.4).
 
 | Column | Cards |
 |---|---|
 | Roadmap | each category of `ROADMAP.md` as a separator; each ticket of it, one card each; each parked card (**Parked work**, below), and above those the `ROADMAP_DESIGNS` separator |
 | Design | each category of the active design as a separator; each ticket of it, one card each |
 | Drafted | each work package whose State cell opens with `drafted`; a State cell opening with no state word breaches §8.6, and the board draws no card for its package |
-| Dispatchable, In progress, Landed | each work package whose State cell opens with that state word |
+| Dispatchable, In progress, Landed | as the Drafted row, for their state words |
 
 **Roadmap cards.** The board reads `ROADMAP.md` in the layout (§8.8), in document order. A category is not a card: its heading is a **separator** drawn in its place among the cards. Each ticket is a card titled by its title over the ticket's text. Lines above the first category, and lines of a category before its first ticket, are not shown.
 
-**Parked work.** A piece of parked work that a roadmap ticket links, by a link whose path names one of its files (§11.1), has no card of its own: it shows inside the card of the ticket that links it. A link in a design ticket other than a link ticket leaves the parked work on Roadmap. Only a roadmap ticket's link naming a piece's file links it; links inside parked work are not followed. A piece of parked work that no roadmap ticket links, and whose link ticket (§11.1) is not in the active design, gets a **parked card**, titled by its parked name (§11.1). The parked cards follow all the cards of tickets, ordered among themselves by parked name, below a separator of their own labelled `ROADMAP_DESIGNS`, drawn where there is any parked card; the parked cards and that separator exist only on the board. A piece of parked work whose link ticket (§11.1) is in the active design shows there as a Design card, and not in Roadmap.
+**Parked work.** A piece of parked work that a roadmap ticket links, by a link whose path names one of its files (§10.1), has no card of its own: it shows inside the card of the ticket that links it. A link in a design ticket other than a link ticket leaves the parked work on Roadmap. Only a roadmap ticket's link naming a piece's file links it; links inside parked work are not followed. A piece of parked work that no roadmap ticket links, and whose link ticket (§10.1) is not in the active design, gets a **parked card**, titled by its parked name (§10.1). The parked cards follow all the cards of tickets, ordered among themselves by parked name, below a separator of their own labelled `ROADMAP_DESIGNS`, drawn where there is any parked card; the parked cards and that separator exist only on the board. A piece of parked work whose link ticket (§10.1) is in the active design shows there as a Design card, and not in Roadmap.
 
-**Design cards.** The board reads the active design in the layout (§8.8), in document order (§8.7); in a diced design each heading is read from the file that holds it. A category, a delta among them, is not a card: its heading is a separator drawn in its place among the cards. Each ticket is a card titled by its title over the ticket's text; a link ticket's (§11.1) is a link ticket's card (**Card links**). A ticket in a delta is an **entry card**. Lines above the first category, and lines of a category before its first ticket, are not shown. Cards and separators follow document order.
+**Design cards.** The board reads the active design in the layout (§8.8), in document order (§8.7); in a diced design each heading is read from the file that holds it. A category, a delta among them, is not a card: its heading is a separator drawn in its place among the cards. Each ticket is a card titled by its title over the ticket's text; a link ticket's (§10.1) is a link ticket's card (**Card links**). A ticket in a delta is an **entry card**. Lines above the first category, and lines of a category before its first ticket, are not shown. Cards and separators follow document order.
 
-**Collapsed categories.** Double-clicking a separator band — a category's, a delta's, or the `ROADMAP_DESIGNS` band's — collapses the cards from that band to the next separator band or the column's end, and doing so again shows them; the band stays, its marker shows the collapsed state in place of the expanded band's, and every card outside the range keeps its place. A band takes keyboard focus, toggles with Enter or Space, keeps that focus across the toggle, and reports whether it is expanded. A collapse belongs to the page and to no file (§11.6): a redraw keeps it, a reload loses it, and a card added to a collapsed category, by a move (§11.3) or by an edit, stays hidden until the category expands.
+**Collapsed categories.** Double-clicking a separator band — a category's, a delta's, or the `ROADMAP_DESIGNS` band's — collapses the cards from that band to the next separator band or the column's end, and doing so again shows them; the band stays, its marker shows the collapsed state in place of the expanded band's, and every card outside the range keeps its place. A band takes keyboard focus, toggles with Enter or Space, keeps that focus across the toggle, and reports whether it is expanded. A collapse belongs to the page and to no file (§10.6): a redraw keeps it, a reload loses it, and a card added to a collapsed category, by a move (§10.3) or by an edit, stays hidden until the category expands.
 
 **Content outside the layout.** Each breach §8.8 reports in `ROADMAP.md`, and each breach of the layout in the active design, is shown as a notice at the head of its document's column, naming its file, as a path from the project root, its line, the text found and the form accepted there.
 
 **Work package cards.** A card shows the package's ID, its title, its rating word (`mechanical` or `expert`) or that it is unrated, and its lifetime where the status table has a `Lifetime` column, matched without regard to case. A package's title is as §8.6 Terms defines it; an untitled package shows untitled. A plan whose table has no `Rating` column is still shown, its packages unrated. Cards in a plan column follow the status table's row order.
 
-**Card links.** Each card other than a parked card links to the file holding its heading, with that heading's anchor (§4.4, repeats counted over that file) as the fragment: a ticket's card to the ticket's heading, a work package's card to the heading its title is read from (§8.6). An untitled work package's card links to the file holding its status-table row, with no fragment. A parked card links to each of its piece's files, with no fragment; a link ticket's card (§11.1), besides its heading, links each file of the piece of parked work it links, with no fragment. Each link reaches its file as the server serves it (§11 **Start**).
+**Card links.** Each card other than a parked card links to the file holding its heading, with that heading's anchor (§4.4, repeats counted over that file) as the fragment: a ticket's card to the ticket's heading, a work package's card to the heading its title is read from (§8.6). An untitled work package's card links to the file holding its status-table row, with no fragment. A parked card links to each of its piece's files, with no fragment; a link ticket's card (§10.1), besides its heading, links each file of the piece of parked work it links, with no fragment. Each link reaches its file as the server serves it (§10 **Start**).
 
 **Title and header.** The page is titled `<project> kanban`, `<project>` being the name of the project root's directory, in the browser's title and in the header. The header also shows the active plan's release (the version of its release line, displayed as written and never interpreted), and "hardening" where the plan's level-1 heading opens `Release hardening`.
 
-### §11.3 Moves between Roadmap and Design
+### §10.3 Moves between Roadmap and Design
 
 Dropping a card moves its ticket between `ROADMAP.md` and the active design. A ticket moves as its **lines**, its heading line to its last non-blank line, carried byte for byte but for their relative links (**Links**, below).
 
@@ -549,7 +612,7 @@ In a diced design, a **leaf** is a file other than a head file (§8.7) whose dir
 **Roadmap to Design.** Dropping a roadmap card or a parked card on Design adds a ticket at the end of the design's `## Drafts` category, the first category whose heading text is `Drafts`. `## Drafts` is not a delta, so `check-design` reports it (§8.7) until the design reaches its final form:
 
 - *roadmap card*: the ticket's lines are removed from `ROADMAP.md` and added to the design;
-- *parked card*: its link ticket (§11.1) is added; the piece of parked work's files and `ROADMAP.md` are not touched.
+- *parked card*: its link ticket (§10.1) is added; the piece of parked work's files and `ROADMAP.md` are not touched.
 
 | The active design | The addition |
 |---|---|
@@ -559,7 +622,7 @@ In a diced design, a **leaf** is a file other than a head file (§8.7) whose dir
 | a diced tree with no `## Drafts` | the ticket is the new leaf `drafts/<name>.md`, named as above, the directory `drafts` beside `entry-point.md` made where it does not exist; `drafts/index.md` is created holding `## Drafts`, a blank line, `Contents:`, a blank line and the line `- [<text>](<name>.md)`; and the lines `- [Drafts](drafts/index.md)` and `  - [<text>](drafts/<name>.md)` are added at the end of the list under the last `Contents:` line of `entry-point.md`, or in a Contents block added at its end where it has none |
 | a diced tree whose `## Drafts` is elsewhere | the ticket is added at the end of `## Drafts` in the file holding it; in a head file (§8.7), before its Contents block |
 
-**Design to Roadmap.** Dropping on Roadmap a design card other than an entry card removes its ticket from the design and, unless it is a link ticket, adds the ticket's lines to `ROADMAP.md`. Where `ROADMAP.md` has categories, the ticket is added at the end of the category whose separator is nearest above the place the drop landed, whether on a card or on a separator; at the end of the first category where no category's separator is above that place, or where that category is no longer on the board. The `ROADMAP_DESIGNS` separator (§11.2) is not a category's. A link ticket is removed and nothing is added; its parked card shows in Roadmap again (§11.2).
+**Design to Roadmap.** Dropping on Roadmap a design card other than an entry card removes its ticket from the design and, unless it is a link ticket, adds the ticket's lines to `ROADMAP.md`. Where `ROADMAP.md` has categories, the ticket is added at the end of the category whose separator is nearest above the place the drop landed, whether on a card or on a separator; at the end of the first category where no category's separator is above that place, or where that category is no longer on the board. The `ROADMAP_DESIGNS` separator (§10.2) is not a category's. A link ticket is removed and nothing is added; its parked card shows in Roadmap again (§10.2).
 
 | `ROADMAP.md` | The addition |
 |---|---|
@@ -569,12 +632,12 @@ In a diced design, a **leaf** is a file other than a head file (§8.7) whose dir
 
 In a diced design, a ticket that is all of a leaf, holding the ticket and only blank lines besides, goes with the leaf: the line linking the leaf is removed from the Contents list of its directory's head and, where that head is not `entry-point.md` and the full listing holds a line linking the leaf, from the full listing too; then the leaf is deleted. Any other ticket is removed from the file holding it.
 
-**Links.** A move rebases each relative link target in the prose (§4) of the ticket's lines, resolved from the directory of the file the ticket leaves, to reach the same file from the directory of the file it joins, fragment kept; targets that §4.3 step 2 leaves unchanged stay unchanged. A `#<anchor>` target stays as written in both directions: it names a heading of the file holding it, so it keeps reaching a heading the ticket carries. It breaks only where §4.4's per-file repeat count gives that heading another anchor in the file joined, or where it named a heading outside the ticket; `check-links` (§8.4) reports either break. Between files in one directory, as `ROADMAP.md` and a single-file active design are (§11.1), no link changes. A link ticket is written, not moved: its links are made for the file that holds it (§11.1).
+**Links.** A move rebases each relative link target in the text (§4) of the ticket's lines, resolved from the directory of the file the ticket leaves, to reach the same file from the directory of the file it joins, fragment kept; targets that §4.3 step 2 leaves unchanged stay unchanged. A `#<anchor>` target stays as written in both directions: it names a heading of the file holding it, so it keeps reaching a heading the ticket carries. It breaks only where §4.4's per-file repeat count gives that heading another anchor in the file joined, or where it named a heading outside the ticket; `check-links` (§8.4) reports either break. Between files in one directory, as `ROADMAP.md` and a single-file active design are (§10.1), no link changes. A link ticket is written, not moved: its links are made for the file that holds it (§10.1).
 
 **Refusals.** A move is refused, and nothing is written, where:
 
 - a file the move writes, creates or deletes (`ROADMAP.md`, or a file of the design) has a content, existence or absence different from when the board last read it, checked for every such file immediately before the first write; a change after that check is not detected;
-- what is dropped on Roadmap is an entry card or a separator, in a drop request the page would not make (§11.4), such as one from a page showing a board that has since changed; refused with a message naming that cause;
+- what is dropped on Roadmap is an entry card or a separator, in a drop request the page would not make (§10.4), such as one from a page showing a board that has since changed; refused with a message naming that cause;
 - the active design is a diced tree, the move adds a leaf, and the title's §3.2 name is empty (an unnumbered title with an empty slug), refused with a message naming that cause;
 - the active design is a diced tree and a file the move creates already exists, refused with a message naming that cause;
 - the active design is a diced tree and the move must remove a leaf's line from the Contents list of its directory's head and cannot find it, refused with a message naming that cause;
@@ -586,13 +649,13 @@ The refusal is shown to the user and names the cause.
 
 **Writes.** Each file is written whole. The addition is written before the removal, so that a failure partway leaves the ticket in both documents and never in neither. A write or a deletion that fails at the file system is reported as `cannot write: <file>`, `<file>` the file that could not be written or deleted, and names the files already written. After a move the page shows a move message naming the files written, a deleted leaf among them, as paths from the project root with `/` separators.
 
-### §11.4 The plan columns are read-only
+### §10.4 The plan columns are read-only
 
-The cards in the plan columns cannot be dragged, and nothing can be dropped on a plan column. The page shows this on sight: the plan columns, their cards and the Design column's entry cards are visibly set apart, by form and not by colour alone, from the cards that can be dragged, which are the Roadmap column's cards and the Design column's other cards. Neither an entry card nor a separator can be dragged; a separator is drawn as a band, not as a card. A work package's state changes only by an edit to the plan file, which the board shows (§11.5).
+The cards in the plan columns cannot be dragged, and nothing can be dropped on a plan column. The page shows this on sight: the plan columns, their cards and the Design column's entry cards are visibly set apart, by form and not by colour alone, from the cards that can be dragged, which are the Roadmap column's cards and the Design column's other cards. Neither an entry card nor a separator can be dragged; a separator is drawn as a band, not as a card. A work package's state changes only by an edit to the plan file, which the board shows (§10.5).
 
-**Drops not accepted.** The only drops accepted are a roadmap or parked card on Design and a design card other than an entry card on Roadmap (both §11.3). Any other drop is not accepted and the card returns to its column. A departure from the common path, such as a plan with no design or a skipped step, is not refused for being one (only §11.3's **Refusals** refuse a move) and never asks for confirmation.
+**Drops not accepted.** The only drops accepted are a roadmap or parked card on Design and a design card other than an entry card on Roadmap (both §10.3). Any other drop is not accepted and the card returns to its column. A departure from the common path, such as a plan with no design or a skipped step, is not refused for being one (only §10.3's **Refusals** refuse a move) and never asks for confirmation.
 
-### §11.5 Live following
+### §10.5 Live following
 
 A change to a watched file, to its content, creation or deletion, appears on the open page without a reload, within about a second. The watched files are `ROADMAP.md`, each parked file and each parked tree's `entry-point.md`, and the active design and the active plan, a diced one as every `.md` file beneath its entry point's directory.
 
@@ -600,14 +663,14 @@ The page's header holds a **connection indicator**, which says whether the serve
 
 The connection indicator carries `docdicer v<version>`, `<version>` being what `docdicer --version` prints for the running server, as its hover text; its accessible label is what it says, whether the server is answering. Nothing else on the page shows docdicer's version.
 
-**Stop.** Beside the connection indicator the page shows a stop button. Pressing it, with no confirmation, asks the server to exit: the server answers, then ends the process as an interrupt does (§11). On that answer the indicator says the server has stopped and to restart `docdicer kanban` and open the URL it prints, no drag starts, the page makes no further attempt to reach the server, and keyboard focus moves to the page's heading.
+**Stop.** Beside the connection indicator the page shows a stop button. Pressing it, with no confirmation, asks the server to exit: the server answers, then ends the process as an interrupt does (§10). On that answer the indicator says the server has stopped and to restart `docdicer kanban` and open the URL it prints, no drag starts, the page makes no further attempt to reach the server, and keyboard focus moves to the page's heading.
 
 A watched file that cannot be read as a file while the server runs is named on stderr as `cannot read: <file>`, and the board keeps its last good state until the file reads again.
 
-### §11.6 The board stores nothing
+### §10.6 The board stores nothing
 
 The board keeps no state beyond the page and writes no file, in the project or elsewhere, for itself. A redraw keeps what the page holds; a reload loses it. A restarted server shows the files as they then are, and nothing else.
 
-### §11.7 What `kanban` does not do
+### §10.7 What `kanban` does not do
 
-It makes no inference call, runs no subprocess, reads no git history and fetches nothing from the network; every write is a fixed transformation of file content (§11.3). Its only state the user sets is a band's collapse (§11.2); it has no filters, pull-downs, search, sorting or custom drop affordances. The board's only writes are the moves of §11.3. It does not reorder tickets, move a ticket between categories of one document, or edit any ticket's or category's text. The project root is found by looking at the file system (§8.6).
+It makes no inference call, runs no subprocess, reads no git history and fetches nothing from the network; every write is a fixed transformation of file content (§10.3). Its only state the user sets is a band's collapse (§10.2); it has no filters, pull-downs, search, sorting or custom drop affordances. The board is not a source of its own (THESIS §Kanban), so it changes nothing that the page's own state could otherwise hold. The board's only writes are the moves of §10.3. It does not reorder tickets, move a ticket between categories of one document, or edit any ticket's or category's text. The project root is found by looking at the file system (§8.6).

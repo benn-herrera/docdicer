@@ -30,21 +30,42 @@ preferred manner.
 
 docdicer's capabilities are used in its own development.
 
-## Requirements
+## Requirements and Supported Platforms
 
-- Python 3.9+
+- Python 3.9 or later
+
+Building from a clone additionally needs [`just`](https://github.com/casey/just); the recipes to
+build, test and format are [Development](docs/development.md)'s.
 
 ## Quick Start
 
 docdicer is primarily used via integration into [devpro](https://github.com/benn-herrera/devpro) and this
 is the recommended way to use it.
 
-If you want to try it on its own, it can be installed via pip or pipx.
+If you want to try it on its own, it runs from a checkout with a Python plus nothing else, or
+installs as the `docdicer` command. The examples below are written for the installed command; from
+a checkout they run as `PYTHONPATH=<checkout> python3 -m docdicer <command> ...`, with `<checkout>`
+the directory holding the `docdicer` package.
+
+### Install
+
+```bash
+pip install --upgrade git+https://github.com/benn-herrera/docdicer
+```
+
+`--upgrade` on the first install and on every later one: pip caches a copied repository by its URL,
+so a repeat `pip install git+...` without it can reinstall the revision it first took.
+
+pipx runs it in an environment of its own instead:
+
+```bash
+pipx install git+https://github.com/benn-herrera/docdicer
+pipx upgrade docdicer
+```
 
 ### Dicing
 
 ```bash
-pip install git+https://github.com/benn-herrera/docdicer
 docdicer dice-doc design.md design-tree/
 docdicer undice design-tree/ rebuilt.md
 ```
@@ -71,13 +92,23 @@ docdicer kanban
 The server prints `http://127.0.0.1:<port>/`. Open that URL; stop the server with Ctrl-C or the
 page's stop button.
 
-It has expected file and directory names, making it potentially cranky if your projects don't use
-the names it likes. Again, recommended usage is via devpro, with which it is closely integrated.
+The board is built from files at fixed paths under the project root:
+
+| File | What the board shows from it |
+|---|---|
+| [`ROADMAP.md`](docs/kanban.md#columns) | the roadmap's tickets |
+| `ROADMAP_DESIGNS/` | parked designs no roadmap ticket links |
+| `ACTIVE_DESIGN.md`, else `ACTIVE_DESIGN/entry-point.md` | the active design |
+| `ACTIVE_PLAN.md`, else `ACTIVE_PLAN/entry-point.md` | the active plan's work packages |
+
+A project holding none of them shows an empty board. What each file must contain, and what the
+board can write, is [The board](docs/kanban.md); again, recommended usage is via devpro, with which
+it is closely integrated.
 
 ## Commands
 
 `docdicer <command> ...`. `--version` prints the version; `-h`, alone or after a command, prints
-help; exit status is 0 on success, 1 when a check or step fails, 2 on bad arguments.
+help.
 
 | Command | What it does |
 |---|---|
@@ -88,20 +119,23 @@ help; exit status is 0 on success, 1 when a check or step fails, 2 on bad argume
 | `check-links` | Check relative links and anchors of any markdown files. |
 | `check-tree` | Check a diced tree's structure. |
 | `check-plan` | Check a plan's status form. |
-| `check-design` | Check a design's final form. |
+| `check-design` | Check a design's final form and its delta pairs against their targets. |
 | `check-roadmap` | Check `ROADMAP.md`'s ticket layout. |
 | `kanban` | Serve a live board of the project's roadmap, design and plan. |
 
-Arguments, options and exit statuses: [docs/commands.md](docs/commands.md).
+Arguments, options, exit statuses and messages, command by command — exit 2 covers bad arguments,
+including a non-empty output directory, an output file that already exists and an unusable
+`<map|->`: [docs/commands.md](docs/commands.md).
 
 ## Learn more
 
-- [Dicing](docs/dicing.md) — heading convention, head-file names, link rewriting and the link map,
-  the manifest.
+- [Commands](docs/commands.md) — every command's arguments, options, exit statuses and messages.
+- [Dicing](docs/dicing.md) — heading convention, link rewriting and the link map, the manifest.
 - [Checks](docs/checks.md) — what reassembly, links, `check-tree` and the plan, design and roadmap
   checks prove.
 - [The board](docs/kanban.md) — columns, layout, links, notices, moves, refusals and collapsing.
-- [Development](docs/development.md) — build, test, module map, worked example.
+- [Development](docs/development.md) — build, test, the module map in ARCHITECTURE §2, worked
+  example.
 
 ## Developer
 
@@ -109,9 +143,11 @@ Arguments, options and exit statuses: [docs/commands.md](docs/commands.md).
 
 ## Third Party Acknowledgements
 
-Credit to Jason Coleman (https://github.com/sangrail) for the kanban-from-markdown idea
-
 - **pytest** (the pytest developers, MIT): Python test runner
 - **black** (Łukasz Langa and contributors, MIT): Python formatter
 - **isort** (Timothy Crosley and contributors, MIT): Python import sorter
-- **flake8** (Tarek Ziadé and contributors, Python Code Quality Authority, MIT): Python linter
+- **flake8** (Tarek Ziadé, Python Code Quality Authority, MIT): Python linter
+
+The kanban-from-markdown idea is Jason Coleman's (<https://github.com/sangrail>); it is an idea
+credit, not a package this project depends on.
+

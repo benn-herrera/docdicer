@@ -112,6 +112,7 @@ def serve():
 
     def start(root: str, *, stderr: Optional[io.StringIO] = None) -> _Client:
         server = KanbanServer(root, stderr=stderr if stderr is not None else io.StringIO())
+        server.start()
         thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05})
         thread.start()
         started.append((server, thread))
@@ -310,6 +311,7 @@ def test_an_unreadable_file_keeps_the_last_good_board_and_is_named(tmp_path):
     server = KanbanServer(root, stderr=err)
     roadmap = Path(root) / "ROADMAP.md"
     try:
+        server.start()
         before = server.payload(None)
         roadmap.chmod(0)
         deadline = time.monotonic() + _TIMEOUT

@@ -7,6 +7,7 @@ keeps a document's line endings exactly as written.
 import os
 import re
 import shutil
+import threading
 
 _TERMINATED_LINE = re.compile(r"[^\n]*\n|[^\n]+$")
 
@@ -56,7 +57,10 @@ def replace_lines(path: str, lines: list[str]) -> None:
     over it, so a failure leaves the old file whole and no temporary file behind. A symbolic link
     is written through, and an existing file keeps its permission bits."""
     path = os.path.realpath(path)
-    temporary = f"{path}.{os.getpid()}.tmp"  # never `.md`: readers of a directory's `.md` files skip it
+    # unique per call: two writers of one path share a pid, so the pid alone would name one file
+    temporary = (
+        f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"  # never `.md`: readers of a directory's `.md` files skip it
+    )
     try:
         write_lines(temporary, lines)
         if os.path.exists(path):

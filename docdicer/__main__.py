@@ -81,7 +81,14 @@ def _parser() -> argparse.ArgumentParser:
         " directory is in",
     )
 
-    p = commands.add_parser("check-design", help="check a design's final form, ready to plan from")
+    p = commands.add_parser(
+        "check-design", help="check a design's final form and its delta pairs against their targets"
+    )
+    p.add_argument(
+        "--deltas-applied",
+        action="store_true",
+        help="check the design's delta claims as applied: every pair must have landed",
+    )
     p.add_argument(
         "design",
         nargs="?",
@@ -112,32 +119,44 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
     out, err = sys.stdout, sys.stderr
+    run = os.getcwd()  # the one read of the working directory: every pass below is given it
     if args.command == "dice-doc":
-        return dice_doc(args.monolith, args.out, args.map, stdout=out, stderr=err, deepest=int(args.split_level))
+        return dice_doc(
+            args.monolith, args.out, args.map, root=run, stdout=out, stderr=err, deepest=int(args.split_level)
+        )
     if args.command == "undice":
-        return undice(args.tree, args.monolith, stdout=out, stderr=err, deepest=int(args.split_level))
+        return undice(args.tree, args.monolith, root=run, stdout=out, stderr=err, deepest=int(args.split_level))
     if args.command == "dice-docs":
-        return dice_docs(args.manifest, args.src, args.work, stdout=out, stderr=err)
+        return dice_docs(args.manifest, args.src, args.work, root=run, stdout=out, stderr=err)
     if args.command == "verify":
         if len(args.pairs) % 2:
             parser.error("verify takes <map|-> followed by <monolith> <out> pairs")
         pairs = list(zip(args.pairs[::2], args.pairs[1::2]))
         map_path = "" if args.map == "-" else args.map
-        return verify(map_path, pairs, stdout=out, stderr=err, deepest=int(args.split_level))
+        return verify(map_path, pairs, root=run, stdout=out, stderr=err, deepest=int(args.split_level))
     if args.command == "check-links":
         missing = [root for root in args.roots if not os.path.exists(root)]
         if missing:
             parser.error(f"no such root: {', '.join(missing)}")
         if _refuse_unreadable(args.roots, err=err):
             return 2
-        return 0 if check_markdown_links(args.roots, out=out, err=err) else 1
+        try:
+            return 0 if check_markdown_links(args.roots, out=out, err=err) else 1
+        except OSError as e:
+            # a file that became unreadable after the pre-check above, which cannot catch a race
+            print(f"cannot read: {e.filename if e.filename is not None else ', '.join(args.roots)}", file=err)
+            return 2
     if args.command == "check-tree":
         missing = [root for root in args.roots if not os.path.isdir(root)]
         if missing:
             parser.error(f"no such directory: {', '.join(missing)}")
         if _refuse_unreadable(args.roots, err=err):
             return 2
-        return 0 if check_trees(args.roots, out=out, err=err) else 1
+        try:
+            return 0 if check_trees(args.roots, out=out, err=err) else 1
+        except OSError as e:
+            print(f"cannot read: {e.filename if e.filename is not None else ', '.join(args.roots)}", file=err)
+            return 2
     if args.command == "check-plan":
         if args.plan is not None and not os.path.isfile(args.plan):
             parser.error(
@@ -149,7 +168,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             parser.error(
                 f"no such design file: {args.design} (name a design's markdown file, or a diced design's entry-point.md)"
             )
-        return check_design(args.design, start=os.getcwd(), stdout=out, stderr=err)
+        return check_design(args.design, start=os.getcwd(), stdout=out, stderr=err, deltas_applied=args.deltas_applied)
     if args.command == "check-roadmap":
         if args.roadmap is not None and not os.path.isfile(args.roadmap):
             parser.error(f"no such roadmap file: {args.roadmap} (name a roadmap's markdown file)")

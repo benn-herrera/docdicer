@@ -86,7 +86,7 @@ def _unreadable(e: OSError, reading: str) -> str:
 class KanbanServer(ThreadingHTTPServer):
     """The board of the project at root, served on HOST at an ephemeral port. Reads the board on
     construction, raising OSError where a file it reads cannot be read and CannotListen where the
-    port cannot be bound, then polls the files every POLL_SECONDS until server_close."""
+    port cannot be bound; `start` begins polling the files every POLL_SECONDS, until server_close."""
 
     daemon_threads = True
 
@@ -104,6 +104,10 @@ class KanbanServer(ThreadingHTTPServer):
             super().__init__((HOST, 0), _Handler)
         except OSError as e:
             raise CannotListen(e.strerror or str(e)) from e
+
+    def start(self) -> None:
+        """Begin polling the watched files. Called once the server is serving, inside the try whose
+        finally closes it, so a construction that fails half-way owns no running thread."""
         self._poller.start()
 
     @property
@@ -214,14 +218,15 @@ def _asset(name: str) -> Optional[tuple[bytes, str]]:
 
 def _document(root: str, url_path: str) -> Optional[tuple[bytes, str]]:
     """The served file url_path, percent-decoded (a byte that is not UTF-8 decoded as a name holds
-    it), names, and its content type; None where it names none or that file cannot be read. The path
-    is only matched against the files `served_files` names, never joined onto root as given."""
+    it), names, and its content type; None where it names none or that file cannot be read. The file
+    read is the one `served_files` names, an absolute path this function never derives from
+    url_path."""
     try:
         wanted = unquote(url_path[1:], errors="surrogateescape")
-        name = next((p for p in served_files(root) if p == wanted), None)
-        if name is None:
+        path = next((p for p in served_files(root) if root_relative(root, p) == wanted), None)
+        if path is None:
             return None
-        text = read_text(os.path.join(root, name))
+        text = read_text(path)
     except OSError:
         return None
     return text.encode("utf-8", "surrogateescape"), "text/markdown; charset=utf-8"
@@ -335,6 +340,7 @@ def run_kanban(project_dir: Optional[str], *, start: str, stdout: TextIO, stderr
         return 2
     print(server.url, file=stdout, flush=True)
     try:
+        server.start()
         server.serve_forever()
     except KeyboardInterrupt:
         pass

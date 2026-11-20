@@ -4,9 +4,15 @@ What this project is and why
 
 This thesis does not:
 
-- Design user-facing behaviors or outcomes — that belongs to SPEC
-- Put forth project mechanisms, coding languages, or code structure — that belongs to ARCHITECTURE
+- Design user-facing behaviors and outcomes — that belongs to SPEC
+- Put forth project mechanisms and code structure — that belongs to ARCHITECTURE
 - Dictate project-specific process — that belongs to CONVENTIONS
+
+| Piece | Most like | It is not |
+|---|---|---|
+| Dicing | A table of contents that opens into a subtree on demand | A search index, or a summarizer |
+| Kanban | A read-only view of the files | A tracker that holds work of its own |
+| The tool as a whole | A small, local, offline text utility | A service, a platform or an assistant |
 
 ## Dicing
 
@@ -17,7 +23,7 @@ of that limited attention with tangential or non-essential information.
 ### Selectivity is the answer
 If you decompose a large document into high level descriptions that link toward greater detail
 agents can find and load what they need instead of loading everything and sifting for the relevant
-information.
+information. Selectivity is not a one-way door: what is split can be put back.
 
 #### More efficient dispatches
 It also means that a dispatching agent can formulate a brief with an efficient pre-task reading list
@@ -33,7 +39,14 @@ a lightweight search path and arrive at pay dirt with less wasted space en route
 Models work best with document-driven processes. Humans track work better with a visual representation.
 Markdown's structure can be used to present the same information to each party with their preferred surfacing.
 
+The board is not another source: it never interprets, fetches or infers, because the document stays
+the one source and a view that added state of its own would be a second one.
+
 ## A small tool for a small job
 This tool is ultimately simple and targeted. It performs a useful function in a low-consequences,
 high-forgiveness environment where light simplicity is more valuable than an exhaustive feature set
-paid for code and time.
+paid for code and time. The grip is not a ceiling: its rules and transforms read markdown as lines
+and edit them by line ranges and splices, and a parser or syntax tree is refused, not built.
+
+No new effect: dicing and the board are each the whole of what the tool does, and the tool claims no
+result beyond them.

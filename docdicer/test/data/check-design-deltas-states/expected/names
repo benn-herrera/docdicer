@@ -1,0 +1,11 @@
+stderr	design.md	35	drifted	from
+stderr	interference:	target.md	also	holds
+stderr	design.md	49	conflicting	from
+stderr	interference:	target.md	also	holds
+stderr	design.md	63	missing.md	readable
+stdout	design.md:7:	pending:	target.md
+stdout	design.md:21:	landed:	target.md
+stdout	design.md:35:	drifted:	target.md
+stdout	design.md:49:	conflicting:	target.md
+stdout	design.md:63:	unreadable:	missing.md
+stdout	design.md	pairs:	5	landed:	1	pending:	1	drifted:	1	conflicting:	1	problems:	3
